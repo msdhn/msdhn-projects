@@ -1,0 +1,41 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+
+# Virtual environments (one per Pulumi project; uv.lock is committed)
+.venv/
+venv/
+
+# Tool caches
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Pulumi (Pulumi.<stack>.yaml stack configs are committed)
+.pulumi/
+Pulumi.*.bak
+*.pulumi-state.json
+
+# Secrets / local env
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.pfx
+
+# Claude Code (shared settings are committed; local overrides are not)
+.claude/settings.local.json
+.claude/worktrees/
+
+# Editor / OS
+.vscode/
+.idea/
+*.swp
+.DS_Store
+Thumbs.db

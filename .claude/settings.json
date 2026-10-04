@@ -1,0 +1,67 @@
+{
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Write|Edit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "if command -v prettier >/dev/null 2>&1; then prettier --write \"$FILEPATH\" 2>/dev/null; elif command -v ruff >/dev/null 2>&1; then ruff format \"$FILEPATH\" 2>/dev/null; elif command -v gofmt >/dev/null 2>&1; then gofmt -w \"$FILEPATH\" 2>/dev/null; fi"
+          },
+          {
+            "type": "command",
+            "command": "if command -v eslint >/dev/null 2>&1; then eslint --fix \"$FILEPATH\" 2>/dev/null; elif command -v ruff >/dev/null 2>&1; then ruff check --fix \"$FILEPATH\" 2>/dev/null; fi"
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "Write|Edit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "case \"$FILEPATH\" in *lock.json|*lock.yaml|*.lock|*lockb) echo 'BLOCK: Do not edit lock files directly.' && exit 1;; esac"
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "echo '--- Reminder: Did you update tasks/changelog.md? ---'"
+          }
+        ]
+      }
+    ]
+  },
+  "permissions": {
+    "allow": [
+      "Read",
+      "Bash(cat *)",
+      "Bash(ls *)",
+      "Bash(find *)",
+      "Bash(grep *)",
+      "Bash(head *)",
+      "Bash(tail *)",
+      "Bash(wc *)",
+      "Bash(git status*)",
+      "Bash(git diff*)",
+      "Bash(git log*)",
+      "Bash(git branch*)",
+      "Bash(mkdir *)"
+    ],
+    "deny": [
+      "Bash(rm -rf *)",
+      "Bash(git push --force*)",
+      "Bash(git push -f*)",
+      "Bash(git checkout main*)",
+      "Bash(git checkout master*)",
+      "Bash(chmod 777*)",
+      "Bash(curl * | bash*)"
+    ]
+  }
+}
