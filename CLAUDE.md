@@ -8,6 +8,16 @@ Pulumi (Python) infrastructure-as-code for a data analytics and AI platform.
 The repo is at an early scaffolding stage: most directories are empty
 placeholders, and only `projects/core/core-hub` has any code so far.
 
+## Terminology
+
+Use these names consistently in network topology design, code, comments and
+docs:
+
+- **MSDHN platform**: this data analytics and AI platform — what this repo
+  provisions.
+- **Other platforms**: separate platforms that the MSDHN platform needs to
+  connect with. Each is referred to by its own name, e.g. `Team_Airflow`.
+
 ## Architecture: hub and spoke
 
 - **Hub (core stack)**: one subscription, shared by all customers. Provides the
@@ -17,6 +27,29 @@ placeholders, and only `projects/core/core-hub` has any code so far.
   multiple resource groups.
 - **Capability stacks (per customer)**: within a customer's spoke, each
   capability is its own stack.
+
+## Network topology
+
+The MSDHN platform's network design:
+
+- **Core Hub VNet** (one): hosts Azure Firewall and the Private DNS Resolver.
+- **Spoke VNet** (one per customer): hosts that customer's Databricks
+  workspace. The workspace's Databricks UI private endpoint sits in a private
+  endpoint (PLE) subnet in the same Spoke VNet.
+- **Data Hub VNet** (one): hosts private endpoints that point to Azure
+  resources belonging to different teams.
+- **Peering**: each Spoke VNet is peered to the Core Hub VNet and to the Data
+  Hub VNet.
+- **Routing**: every Spoke subnet's route table sends `0.0.0.0/0` to the Azure
+  Firewall private IP, so outbound traffic goes through Azure Firewall.
+- **DNS**: all private DNS zones are linked only to the Core Hub VNet. Each
+  Spoke VNet uses custom DNS pointing to Azure Firewall, and Azure Firewall
+  forwards DNS queries to the Private DNS Resolver.
+
+### Connections to other platforms
+
+- `Team_Airflow`: has its own VNet. Airflow there needs to connect to the
+  Databricks workspaces in the Spoke VNets.
 
 ## Repository layout
 
