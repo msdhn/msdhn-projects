@@ -179,7 +179,7 @@ A Private Link origin can't share an origin group with public origins.
 | Private Link resource | `/subscriptions/<cust01-sub>/resourceGroups/<rg>/providers/Microsoft.Web/sites/app-msdhn-cust01-prd` |
 | Target sub-resource | `sites` |
 | Private Link region | West Europe (same as the App Service) |
-| Request message | `AFD afd-msdhn-prd → app-msdhn-cust01-prd` |
+| Request message | `Azure Front Door afd-msdhn-prd → app-msdhn-cust01-prd` |
 
 ### 5.7 Route
 
