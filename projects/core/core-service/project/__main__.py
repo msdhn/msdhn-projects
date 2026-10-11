@@ -3,8 +3,7 @@ import os
 import pulumi
 import pulumi_azure_native as azure_native
 from dotenv import load_dotenv
-
-from network import HubNetworkArgs, create_hub_network
+from secret_store import KeyVaultArgs, create_key_vault
 
 load_dotenv()
 
@@ -20,11 +19,12 @@ if cloud == "azure":
     )
     opts = pulumi.ResourceOptions(providers=[azure_provider])
 
-hub_network = create_hub_network(
-    cloud,
-    "hub-network",
-    HubNetworkArgs(tags={"project": "core-hub", "owner": "msdhn"}),
-    opts,
+key_vault = create_key_vault(
+    cloud=cloud,
+    name=pulumi.Config().require("keyVaultName"),
+    args=KeyVaultArgs(tags={"environment": pulumi.get_stack()}),
+    opts=opts,
 )
 
-hub_network.vnet_id.apply(lambda id: pulumi.log.info(f"Hub network ready: {id}"))
+pulumi.export("keyVaultId", key_vault.vault_id)
+pulumi.export("keyVaultUri", key_vault.vault_uri)

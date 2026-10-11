@@ -1,8 +1,9 @@
 {
   "folders": [
-    { "name": "core-hub", "path": "projects/core/core-hub/project" },
-       { "name": "core-service", "path": "projects/core/core-service/project" },
-    { "name": "repo-root", "path": "." }
+     { "name": "core-hub", "path": "projects/core/core-hub/project" },
+     { "name": "data-hub", "path": "projects/core/data-hub/project" },
+     { "name": "core-service", "path": "projects/core/core-service/project" },
+     { "name": "repo-root", "path": "." }
   ],
   "settings": {
     "python.defaultInterpreterPath": "${workspaceFolder}/.venv/bin/python"
