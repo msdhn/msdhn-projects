@@ -48,7 +48,26 @@ Set the stack-specific Pulumi values. The Key Vault name must be globally unique
 ```sh
 pulumi config set resourceGroupName <resource-group-name>
 pulumi config set keyVaultName <globally-unique-vault-name>
+pulumi config set --path 'allowedSubnetIds[0]' '<subnet-resource-id>'
 ```
+
+Provide one subnet resource ID for each subnet allowed to reach the vault. Key Vault virtual network rules require subnet IDs, not VNet IDs. Each allowed subnet must have the `Microsoft.KeyVault` service endpoint enabled.
+
+Configure `keyVaultRoleAssignments` as a mapping from each Microsoft Entra object ID to its principal type and one or more full Azure role-definition resource IDs. Use the Entra **object ID** for a group or service principal, not the application's client ID.
+
+```yaml
+core-service:keyVaultRoleAssignments:
+	<entra-group-object-id>:
+		principal_type: Group
+		role_definition_ids:
+			- /subscriptions/<subscription-id>/providers/Microsoft.Authorization/roleDefinitions/<role-guid>
+	<service-principal-object-id>:
+		principal_type: ServicePrincipal
+		role_definition_ids:
+			- /subscriptions/<subscription-id>/providers/Microsoft.Authorization/roleDefinitions/<role-guid>
+```
+
+Role assignments are created at the Key Vault scope. Select the least-privileged built-in or custom role required by each principal.
 
 The checked-in `Pulumi.dev.yaml` sets `azure-native:location` to `westeurope`. Change it with Pulumi config if the dev stack should use another supported location:
 
@@ -108,4 +127,4 @@ uv run pre-commit run --all-files
 
 ## Security Notes
 
-The Key Vault is configured to use Azure RBAC authorization. This project does not currently create role assignments, configure private endpoints or firewall rules, or define workload access. Add and review those controls before storing production secrets. Do not commit `.env` or place secret values in Pulumi outputs.
+The Key Vault is configured to use Azure RBAC authorization. Public network access is enabled so Azure Key Vault firewall rules can allow the configured subnets; the firewall denies traffic by default, while Azure services designated as trusted by Microsoft can bypass the network rules. Requests from other public networks are blocked. This project creates configured Key Vault-scoped role assignments but does not create private endpoints. Do not commit `.env` or place secret values in Pulumi outputs.

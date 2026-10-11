@@ -3,11 +3,13 @@ import os
 import pulumi
 import pulumi_azure_native as azure_native
 from dotenv import load_dotenv
-from secret_store import KeyVaultArgs, create_key_vault
+from secret_store import KeyVaultArgs, KeyVaultPrincipalAccess, create_key_vault
 
 load_dotenv()
 
 cloud = pulumi.Config().get("cloud") or "azure"
+config = pulumi.Config()
+role_assignments_config = config.require_object("keyVaultRoleAssignments")
 
 opts = None
 if cloud == "azure":
@@ -21,8 +23,15 @@ if cloud == "azure":
 
 key_vault = create_key_vault(
     cloud=cloud,
-    name=pulumi.Config().require("keyVaultName"),
-    args=KeyVaultArgs(tags={"environment": pulumi.get_stack()}),
+    name=config.require("keyVaultName"),
+    args=KeyVaultArgs(
+        tags={"environment": pulumi.get_stack()},
+        allowed_subnet_ids=config.require_object("allowedSubnetIds"),
+        role_assignments={
+            principal_id: KeyVaultPrincipalAccess(**access)
+            for principal_id, access in role_assignments_config.items()
+        },
+    ),
     opts=opts,
 )
 
