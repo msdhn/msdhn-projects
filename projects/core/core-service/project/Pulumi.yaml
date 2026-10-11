@@ -1,9 +1,9 @@
-name: core-hub
+name: core-service
 runtime:
   name: python
   options:
     toolchain: uv
-description: Core Hub project
+description: Core Service project
 config:
   pulumi:autonaming:
     value:

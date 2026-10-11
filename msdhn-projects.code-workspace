@@ -1,6 +1,7 @@
 {
   "folders": [
     { "name": "core-hub", "path": "projects/core/core-hub/project" },
+       { "name": "core-service", "path": "projects/core/core-service/project" },
     { "name": "repo-root", "path": "." }
   ],
   "settings": {
