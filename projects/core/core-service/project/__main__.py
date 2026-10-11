@@ -3,6 +3,7 @@ import os
 import pulumi
 import pulumi_azure_native as azure_native
 from dotenv import load_dotenv
+from front_door import FrontDoorArgs, create_front_door
 from secret_store import KeyVaultArgs, KeyVaultPrincipalAccess, create_key_vault
 
 load_dotenv()
@@ -37,3 +38,21 @@ key_vault = create_key_vault(
 
 pulumi.export("keyVaultId", key_vault.vault_id)
 pulumi.export("keyVaultUri", key_vault.vault_uri)
+
+front_door = create_front_door(
+    cloud=cloud,
+    name=config.require("frontDoorName"),
+    args=FrontDoorArgs(
+        origin_host_name=config.require("frontDoorOriginHostName"),
+        origin_host_header=config.get("frontDoorOriginHostHeader"),
+        health_probe_path=config.get("frontDoorHealthProbePath") or "/",
+        route_patterns=config.get_object("frontDoorRoutePatterns") or ["/*"],
+        tags={"environment": pulumi.get_stack()},
+    ),
+    opts=opts,
+)
+
+pulumi.export("frontDoorProfileId", front_door.profile_id)
+pulumi.export("frontDoorEndpointId", front_door.endpoint_id)
+pulumi.export("frontDoorHostName", front_door.endpoint_host_name)
+pulumi.export("frontDoorUrl", front_door.endpoint_url)

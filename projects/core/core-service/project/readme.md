@@ -11,13 +11,17 @@ __main__.py
 					-> Azure Native Key Vault
 ```
 
-The stack code depends on the `KeyVault` protocol rather than the Azure implementation. `secret_store/factory.py` selects the provider implementation. Azure is currently the only supported cloud; a future provider can add an implementation that satisfies the capability contract.
+The stack code depends on capability protocols rather than Azure implementation classes. Each capability has a factory for provider selection. Azure is currently the only supported cloud; a future provider can add an implementation that satisfies the relevant capability contract.
 
 ```text
 secret_store/
 	base.py              # KeyVault protocol and cloud-neutral arguments
 	azure_key_vault.py   # Azure Key Vault implementation
 	factory.py           # Provider implementation selection
+front_door/
+	base.py               # FrontDoor protocol and cloud-neutral arguments
+	azure_front_door.py   # Azure Front Door implementation
+	factory.py            # Provider implementation selection
 ```
 
 ## Prerequisites
@@ -49,6 +53,8 @@ Set the stack-specific Pulumi values. The Key Vault name must be globally unique
 pulumi config set resourceGroupName <resource-group-name>
 pulumi config set keyVaultName <globally-unique-vault-name>
 pulumi config set --path 'allowedSubnetIds[0]' '<subnet-resource-id>'
+pulumi config set frontDoorName <globally-unique-front-door-name>
+pulumi config set frontDoorOriginHostName <origin-dns-hostname>
 ```
 
 Provide one subnet resource ID for each subnet allowed to reach the vault. Key Vault virtual network rules require subnet IDs, not VNet IDs. Each allowed subnet must have the `Microsoft.KeyVault` service endpoint enabled.
@@ -68,6 +74,16 @@ core-service:keyVaultRoleAssignments:
 ```
 
 Role assignments are created at the Key Vault scope. Select the least-privileged built-in or custom role required by each principal.
+
+`frontDoorName` is also used as the Front Door endpoint's DNS label and must be globally unique. `frontDoorOriginHostName` must be the backend DNS hostname without a scheme, for example `app.example.com`. Optional settings include:
+
+```sh
+pulumi config set frontDoorOriginHostHeader <origin-host-header>
+pulumi config set frontDoorHealthProbePath /health
+pulumi config set --path 'frontDoorRoutePatterns[0]' '/*'
+```
+
+This creates an Azure Front Door Standard profile, a single HTTPS origin, a health-probed origin group, and a default-domain route that redirects HTTP to HTTPS. It does not configure a custom domain, WAF policy, or private link to the origin.
 
 The checked-in `Pulumi.dev.yaml` sets `azure-native:location` to `westeurope`. Change it with Pulumi config if the dev stack should use another supported location:
 
@@ -101,6 +117,7 @@ Read them with:
 ```sh
 pulumi stack output keyVaultId
 pulumi stack output keyVaultUri
+pulumi stack output frontDoorUrl
 ```
 
 ## Development Checks
