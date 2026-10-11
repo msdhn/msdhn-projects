@@ -26,3 +26,8 @@ dev = [
     "ruff>=0.16.10",
 ]
 
+# Anchors ruff to this directory so local packages sort as first-party
+# whether ruff runs from here or from the repo root (pre-commit).
+[tool.ruff]
+src = ["."]
+
