@@ -1,9 +1,9 @@
 from pulumi import ResourceOptions
 
-from .azure_key_vault import AzureKeyVault
+from .azure_key_vault import ManagementAzureKeyVault
 from .base import KeyVault, KeyVaultArgs
 
-_IMPLEMENTATIONS = {"azure": AzureKeyVault}
+_IMPLEMENTATIONS = {"azure": ManagementAzureKeyVault}
 
 
 def create_key_vault(

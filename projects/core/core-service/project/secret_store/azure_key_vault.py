@@ -7,7 +7,7 @@ from pulumi import ComponentResource, Output, ResourceOptions
 from .base import KeyVaultArgs
 
 
-class AzureKeyVault(ComponentResource):
+class ManagementAzureKeyVault(ComponentResource):
     vault_id: Output[str]
     vault_uri: Output[str]
 
@@ -17,7 +17,10 @@ class AzureKeyVault(ComponentResource):
         args: KeyVaultArgs,
         opts: ResourceOptions | None = None,
     ) -> None:
-        super().__init__("core-service:secret-store:AzureKeyVault", name, {}, opts)
+
+        super().__init__(
+            "core-service:secret-store:ManagementAzureKeyVault", name, {}, opts
+        )
 
         config = pulumi.Config()
         azure_config = pulumi.Config("azure-native")
@@ -33,16 +36,16 @@ class AzureKeyVault(ComponentResource):
                 sku=azure_native.keyvault.SkuArgs(family="A", name="standard"),
                 enable_rbac_authorization=True,
                 public_network_access="Enabled",
-                network_acls=azure_native.keyvault.NetworkRuleSetArgs(
-                    bypass="AzureServices",
-                    default_action="Deny",
-                    # virtual_network_rules=[
-                    #     azure_native.keyvault.VirtualNetworkRuleArgs(id=subnet_id)
-                    #     for subnet_id in args.allowed_subnet_ids
-                    # ],
-                ),
+                # network_acls=azure_native.keyvault.NetworkRuleSetArgs(
+                #     bypass="AzureServices",
+                #     default_action="Deny",
+                #     # virtual_network_rules=[
+                #     #     azure_native.keyvault.VirtualNetworkRuleArgs(id=subnet_id)
+                #     #     for subnet_id in args.allowed_subnet_ids
+                #     # ],
+                # ),
             ),
-            opts=ResourceOptions(parent=self),
+            opts=ResourceOptions(parent=self, protect=True),
         )
 
         # for principal_id, access in args.role_assignments.items():
