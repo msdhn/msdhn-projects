@@ -1,0 +1,39 @@
+# Steps shared by the Preview and Deploy stages of azure-pipelines.yml.
+
+parameters:
+  - name: serviceConnection
+    type: string
+  - name: stack
+    type: string
+  - name: up
+    type: boolean
+    default: false
+
+steps:
+  - checkout: self
+
+  # uv is pinned to a known release; the Pulumi CLI matches the pulumi SDK
+  # version in project/uv.lock. Bump both deliberately.
+  - script: |
+      set -euo pipefail
+      curl -LsSf https://astral.sh/uv/0.11.21/install.sh | sh
+      curl -fsSL https://get.pulumi.com | sh -s -- --version 3.268.0
+      echo "##vso[task.prependpath]$HOME/.local/bin"
+      echo "##vso[task.prependpath]$HOME/.pulumi/bin"
+    displayName: Install uv and the Pulumi CLI
+
+  - task: AzureCLI@2
+    displayName: deploy.py ${{ parameters.stack }}${{ iif(parameters.up, ' --up', '') }}
+    inputs:
+      azureSubscription: ${{ parameters.serviceConnection }}
+      scriptType: bash
+      scriptLocation: inlineScript
+      workingDirectory: projects/core/core-service/project
+      inlineScript: |
+        set -euo pipefail
+        # build_context() requires these; take them from the service connection.
+        export ARM_SUBSCRIPTION_ID=$(az account show --query id --output tsv)
+        export ARM_TENANT_ID=$(az account show --query tenantId --output tsv)
+        uv run --locked python deploy.py ${{ parameters.stack }}${{ iif(parameters.up, ' --up', '') }}
+    env:
+      PULUMI_CONFIG_PASSPHRASE: $(PULUMI_CONFIG_PASSPHRASE)

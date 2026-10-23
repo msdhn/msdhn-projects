@@ -83,6 +83,12 @@ pulumi preview                 # show planned changes
 pulumi up                      # deploy
 ```
 
+Exception: `projects/core/core-service/project` has no `Pulumi.yaml` or
+`Pulumi.<stack>.yaml` by design. It runs as an inline Automation API program;
+all project and stack config lives in its `deploy.py`. Use
+`uv run python deploy.py <stack> [--up]` there, not the `pulumi` CLI, and
+don't add the YAML files back.
+
 Python `>=3.14` is required. There are no tests and no lint configuration yet;
 `ruff format` / `ruff check --fix` run automatically on edited files via the
 hooks in `.claude/settings.json` when `ruff` is installed.
@@ -91,7 +97,8 @@ hooks in `.claude/settings.json` when `ruff` is installed.
 
 ### Resource naming
 
-`Pulumi.yaml` sets `pulumi:autonaming` to `verbatim`: the logical name given
+`Pulumi.yaml` sets `pulumi:autonaming` to `verbatim` (in core-service,
+`PROJECT_CONFIG` in `deploy.py` does): the logical name given
 to a resource becomes its physical cloud name with no random suffix. Give
 every resource a full, deliberate, collision-free name — and respect the
 target resource type's naming rules (length, charset, global uniqueness).

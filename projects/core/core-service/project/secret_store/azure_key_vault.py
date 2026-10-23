@@ -1,5 +1,4 @@
 import os
-from uuid import NAMESPACE_URL, uuid5
 
 import pulumi
 import pulumi_azure_native as azure_native
@@ -37,30 +36,30 @@ class AzureKeyVault(ComponentResource):
                 network_acls=azure_native.keyvault.NetworkRuleSetArgs(
                     bypass="AzureServices",
                     default_action="Deny",
-                    virtual_network_rules=[
-                        azure_native.keyvault.VirtualNetworkRuleArgs(id=subnet_id)
-                        for subnet_id in args.allowed_subnet_ids
-                    ],
+                    # virtual_network_rules=[
+                    #     azure_native.keyvault.VirtualNetworkRuleArgs(id=subnet_id)
+                    #     for subnet_id in args.allowed_subnet_ids
+                    # ],
                 ),
             ),
             opts=ResourceOptions(parent=self),
         )
 
-        for principal_id, access in args.role_assignments.items():
-            for role_definition_id in access.role_definition_ids:
-                assignment_id = uuid5(
-                    NAMESPACE_URL,
-                    f"{name}:{principal_id}:{role_definition_id}",
-                )
-                azure_native.authorization.RoleAssignment(
-                    f"{name}-role-{assignment_id.hex[:12]}",
-                    principal_id=principal_id,
-                    principal_type=access.principal_type,
-                    role_definition_id=role_definition_id,
-                    role_assignment_name=str(assignment_id),
-                    scope=vault.id,
-                    opts=ResourceOptions(parent=self),
-                )
+        # for principal_id, access in args.role_assignments.items():
+        #     for role_definition_id in access.role_definition_ids:
+        #         assignment_id = uuid5(
+        #             NAMESPACE_URL,
+        #             f"{name}:{principal_id}:{role_definition_id}",
+        #         )
+        #         azure_native.authorization.RoleAssignment(
+        #             f"{name}-role-{assignment_id.hex[:12]}",
+        #             principal_id=principal_id,
+        #             principal_type=access.principal_type,
+        #             role_definition_id=role_definition_id,
+        #             role_assignment_name=str(assignment_id),
+        #             scope=vault.id,
+        #             opts=ResourceOptions(parent=self),
+        #         )
 
         self.vault_id = vault.id
         self.vault_uri = vault.properties.apply(lambda properties: properties.vault_uri)

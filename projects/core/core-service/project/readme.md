@@ -4,16 +4,32 @@ Pulumi Python project for provisioning shared services used by the MSDHN platfor
 
 ## Current Architecture
 
+The project is run entirely through the Pulumi Automation API. There is no `Pulumi.yaml` or `Pulumi.<stack>.yaml`: `deploy.py` holds the project and stack settings, and runs the program in `program.py` inline.
+
 ```text
-__main__.py
-	-> secret_store.create_key_vault(...)
-			-> AzureKeyVault (Pulumi ComponentResource)
-					-> Azure Native Key Vault
+deploy.py
+	-> program.pulumi_program()
+			-> stack_context.build_context()
+			-> deployments.deploy_key_vault(ctx)
+					-> secret_store.create_key_vault(...)
+							-> AzureKeyVault (Pulumi ComponentResource)
+									-> Azure Native Key Vault
+			-> deployments.deploy_front_door(ctx)
+					-> front_door.create_front_door(...)
+							-> AzureFrontDoor (Pulumi ComponentResource)
 ```
 
-The stack code depends on capability protocols rather than Azure implementation classes. Each capability has a factory for provider selection. Azure is currently the only supported cloud; a future provider can add an implementation that satisfies the relevant capability contract.
+`program.py` only lists the components to deploy, in order. Settings shared by every component (cloud, provider options, common tags) are built once in `stack_context.py`. Each module in `deployments/` reads its component's config section, calls the capability factory, and exports the outputs. When a component needs another's outputs, pass them as arguments to its `deploy_*` function from `program.py`.
+
+The stack code depends on capability protocols rather than Azure implementation classes. Each capability has a factory for provider selection. Azure is currently the only supported cloud; a future provider can add an implementation that satisfies the relevant capability contract. Capability packages do not read this project's config; that mapping lives in `deployments/`.
 
 ```text
+deploy.py                # Automation API driver: project + stack config, preview/up
+program.py               # The Pulumi program: which components to deploy
+stack_context.py         # StackContext: cloud, provider options, common tags
+deployments/
+	key_vault.py         # keyVault config -> create_key_vault -> exports
+	front_door.py        # frontDoor config -> create_front_door -> exports
 secret_store/
 	base.py              # KeyVault protocol and cloud-neutral arguments
 	azure_key_vault.py   # Azure Key Vault implementation
@@ -28,7 +44,7 @@ front_door/
 
 - Python 3.14 or later
 - [uv](https://docs.astral.sh/uv/)
-- Pulumi CLI
+- Pulumi CLI (the Automation API drives it)
 - Azure credentials with permission to create a Key Vault in the target resource group
 
 ## Configure
@@ -47,63 +63,57 @@ ARM_SUBSCRIPTION_ID=<azure-subscription-id>
 ARM_TENANT_ID=<microsoft-entra-tenant-id>
 ```
 
-Set the stack-specific Pulumi values. The Key Vault name must be globally unique and satisfy Azure Key Vault naming requirements.
+All Pulumi config lives in `deploy.py`:
 
-```sh
-pulumi config set resourceGroupName <resource-group-name>
-pulumi config set keyVaultName <globally-unique-vault-name>
-pulumi config set --path 'allowedSubnetIds[0]' '<subnet-resource-id>'
-pulumi config set frontDoorName <globally-unique-front-door-name>
-pulumi config set frontDoorOriginHostName <origin-dns-hostname>
-```
+- `PROJECT_CONFIG` applies to every stack. It sets `pulumi:autonaming` to `verbatim`, so each resource's logical name is its physical cloud name. Do not remove it: without it every resource gets a random suffix, and on a deployed stack that replaces every resource.
+- `STACK_CONFIG` has one entry per stack. Keys are `pulumi config set --path` paths. Values wrapped in `<...>` are placeholders; `deploy.py` refuses to run while any remain. To add a stack, add an entry.
 
-Provide one subnet resource ID for each subnet allowed to reach the vault. Key Vault virtual network rules require subnet IDs, not VNet IDs. Each allowed subnet must have the `Microsoft.KeyVault` service endpoint enabled.
+`resourceGroupName` is shared by all components; every other setting is grouped under one object per component (`keyVault`, `frontDoor`). The Key Vault name must be globally unique and satisfy Azure Key Vault naming requirements.
 
-Configure `keyVaultRoleAssignments` as a mapping from each Microsoft Entra object ID to its principal type and one or more full Azure role-definition resource IDs. Use the Entra **object ID** for a group or service principal, not the application's client ID.
+Provide one subnet resource ID for each subnet allowed to reach the vault, as `keyVault.allowedSubnetIds[0]`, `[1]`, and so on. Key Vault virtual network rules require subnet IDs, not VNet IDs. Each allowed subnet must have the `Microsoft.KeyVault` service endpoint enabled.
 
-```yaml
-core-service:keyVaultRoleAssignments:
-	<entra-group-object-id>:
-		principal_type: Group
-		role_definition_ids:
-			- /subscriptions/<subscription-id>/providers/Microsoft.Authorization/roleDefinitions/<role-guid>
-	<service-principal-object-id>:
-		principal_type: ServicePrincipal
-		role_definition_ids:
-			- /subscriptions/<subscription-id>/providers/Microsoft.Authorization/roleDefinitions/<role-guid>
+`keyVault.roleAssignments` maps each Microsoft Entra object ID to its principal type and one or more full Azure role-definition resource IDs. Use the Entra **object ID** for a group or service principal, not the application's client ID:
+
+```python
+'keyVault.roleAssignments["<entra-group-object-id>"].principal_type': "Group",
+'keyVault.roleAssignments["<entra-group-object-id>"].role_definition_ids[0]': (
+    "/subscriptions/<subscription-id>/providers/Microsoft.Authorization/roleDefinitions/<role-guid>"
+),
+'keyVault.roleAssignments["<service-principal-object-id>"].principal_type': "ServicePrincipal",
+'keyVault.roleAssignments["<service-principal-object-id>"].role_definition_ids[0]': (
+    "/subscriptions/<subscription-id>/providers/Microsoft.Authorization/roleDefinitions/<role-guid>"
+),
 ```
 
 Role assignments are created at the Key Vault scope. Select the least-privileged built-in or custom role required by each principal.
 
-`frontDoorName` is also used as the Front Door endpoint's DNS label and must be globally unique. `frontDoorOriginHostName` must be the backend DNS hostname without a scheme, for example `app.example.com`. Optional settings include:
-
-```sh
-pulumi config set frontDoorOriginHostHeader <origin-host-header>
-pulumi config set frontDoorHealthProbePath /health
-pulumi config set --path 'frontDoorRoutePatterns[0]' '/*'
-```
+`frontDoor.name` is also used as the Front Door endpoint's DNS label and must be globally unique. `frontDoor.originHostName` must be the backend DNS hostname without a scheme, for example `app.example.com`. Optional settings are `frontDoor.originHostHeader`, `frontDoor.healthProbePath` (default `/`) and `frontDoor.routePatterns[0]`, `[1]`, ... (default `/*`).
 
 This creates an Azure Front Door Standard profile, a single HTTPS origin, a health-probed origin group, and a default-domain route that redirects HTTP to HTTPS. It does not configure a custom domain, WAF policy, or private link to the origin.
 
-The checked-in `Pulumi.dev.yaml` sets `azure-native:location` to `westeurope`. Change it with Pulumi config if the dev stack should use another supported location:
-
-```sh
-pulumi config set azure-native:location <azure-region>
-```
-
-The `cloud` Pulumi setting is optional and defaults to `azure`. Other values are currently unsupported by the factory.
+`azure-native:location` is set per stack in `STACK_CONFIG`. The `cloud` setting is optional and defaults to `azure`. Other values are currently unsupported by the factory.
 
 ## Preview and Deploy
 
-Initialize a stack if one does not already exist, then preview before deploying:
-
 ```sh
-pulumi stack init dev
-pulumi preview
-pulumi up
+uv run python deploy.py core-service         # preview
+uv run python deploy.py core-service --up    # deploy
 ```
 
-Use `pulumi stack select dev` instead of `pulumi stack init dev` when the stack already exists.
+`deploy.py` creates the stack if it does not exist, writes its config, then previews or deploys. Outputs are printed at the end of `--up`. It needs the same environment as the Pulumi CLI: a Pulumi backend login (`pulumi login`, `PULUMI_ACCESS_TOKEN` or `PULUMI_BACKEND_URL`) and `PULUMI_CONFIG_PASSPHRASE`. Always use the same passphrase for a stack; it decrypts the secrets in the stack's state.
+
+Because there is no `Pulumi.yaml` in this directory, `pulumi` CLI commands run here directly do not work; go through `deploy.py`.
+
+## CI/CD (Azure DevOps)
+
+`../azure-pipelines.yml` runs `deploy.py core-service` as a preview on every PR to `main` and on `main` itself, then `deploy.py core-service --up` on `main` once the `core-service-dev` environment's approval check passes. The steps both stages share are in `../deploy-steps.yml`. The one-time Azure DevOps setup (service connection, variable group, environment) is listed at the top of `azure-pipelines.yml`.
+
+The pipeline keeps Pulumi state in Azure Blob storage (`PULUMI_BACKEND_URL=azblob://...`). Run `deploy.py` locally against the same backend, or you will be working on a separate copy of the stack:
+
+```sh
+export AZURE_STORAGE_ACCOUNT=<state-storage-account>
+pulumi login azblob://<state-container>
+```
 
 ## Outputs
 
@@ -111,14 +121,7 @@ After deployment, the stack exports:
 
 - `keyVaultId`: Azure resource ID of the Key Vault
 - `keyVaultUri`: URI used by clients to access the vault
-
-Read them with:
-
-```sh
-pulumi stack output keyVaultId
-pulumi stack output keyVaultUri
-pulumi stack output frontDoorUrl
-```
+- `frontDoorProfileId`, `frontDoorEndpointId`, `frontDoorHostName`, `frontDoorUrl`: when Front Door is enabled in `program.py`
 
 ## Development Checks
 

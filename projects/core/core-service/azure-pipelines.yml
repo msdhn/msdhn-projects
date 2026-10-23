@@ -1,0 +1,76 @@
+# core-service: preview on every PR to main; deploy on main after approval.
+#
+# Both stages run project/deploy.py (Pulumi Automation API) inside an Azure CLI
+# session from the service connection below. See project/readme.md.
+#
+# One-time setup in Azure DevOps:
+# - An Azure Resource Manager service connection (workload identity
+#   federation), named in azureServiceConnection. Its identity needs rights to
+#   deploy core-service's resources, plus Storage Blob Data Contributor on the
+#   Pulumi state container.
+# - A variable group `core-service-dev` with the secret variable
+#   PULUMI_CONFIG_PASSPHRASE. Never change it once the stack exists: it
+#   decrypts the secrets in the stack's state.
+# - An environment `core-service-dev` with an Approvals check, and an
+#   Exclusive lock check so two deploys never run at once.
+
+trigger:
+  branches:
+    include:
+      - main
+  paths:
+    include:
+      - projects/core/core-service
+
+pr:
+  branches:
+    include:
+      - main
+  paths:
+    include:
+      - projects/core/core-service
+
+variables:
+  - group: core-service-dev
+  - name: azureServiceConnection
+    value: msdhn-pulumi-sc
+  # Shared Pulumi state. Local runs of deploy.py must log in to the same
+  # backend, or they work against a separate copy of the stack.
+  - name: PULUMI_BACKEND_URL
+    value: azblob://pulumistates
+  - name: AZURE_STORAGE_ACCOUNT
+    value: msdhnsa
+
+pool:
+  vmImage: ubuntu-latest
+
+stages:
+  - stage: Preview
+    jobs:
+      - job: preview
+        steps:
+          - template: deploy-steps.yml
+            parameters:
+              serviceConnection: ${{ variables.azureServiceConnection }}
+              stack: core-service
+
+  - stage: Deploy
+    dependsOn: Preview
+    condition: >-
+      and(
+        succeeded(),
+        eq(variables['Build.SourceBranch'], 'refs/heads/main'),
+        ne(variables['Build.Reason'], 'PullRequest')
+      )
+    jobs:
+      - deployment: deploy
+        environment: core-service-dev
+        strategy:
+          runOnce:
+            deploy:
+              steps:
+                - template: deploy-steps.yml
+                  parameters:
+                    serviceConnection: ${{ variables.azureServiceConnection }}
+                    stack: core-service
+                    up: true
