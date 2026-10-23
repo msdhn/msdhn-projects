@@ -31,7 +31,7 @@ pr:
       - projects/core/core-service
 
 variables:
-  - group: core-service-dev
+#  - group: core-service-dev
   - name: azureServiceConnection
     value: msdhn-pulumi-sc
   # Shared Pulumi state. Local runs of deploy.py must log in to the same
