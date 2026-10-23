@@ -89,7 +89,9 @@ all project and stack config lives in its `deploy.py`. Use
 `uv run python deploy.py <stack> [--up]` there, not the `pulumi` CLI, and
 don't add the YAML files back.
 
-Python `>=3.14` is required. There are no tests and no lint configuration yet;
+Python `>=3.14` is required. Only `projects/core/core-service/project` has
+tests so far: `uv run pytest` there. They run components under Pulumi mocks
+(`tests/conftest.py`), so no cloud access is needed. There is no lint configuration yet;
 `ruff format` / `ruff check --fix` run automatically on edited files via the
 hooks in `.claude/settings.json` when `ruff` is installed.
 

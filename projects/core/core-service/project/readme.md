@@ -129,12 +129,15 @@ After deployment, the stack exports:
 
 ## Development Checks
 
-Ruff is available as a development dependency:
+Ruff and pytest are available as development dependencies:
 
 ```sh
 uv run ruff check .
 uv run ruff format --check .
+uv run pytest
 ```
+
+Tests live in `tests/`, one folder per package. They run components under Pulumi mocks: no Pulumi backend, Azure login or network access is needed. `tests/conftest.py` provides a `mocks` fixture that records every resource a test creates, so a test can assert on the exact inputs that would be sent to Azure. Decorate any test that creates resources with `@pulumi.runtime.test`.
 
 `pre-commit` is a development dependency, and its configuration is at the monorepo root. Install the Git hook from the repository root:
 

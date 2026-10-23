@@ -23,6 +23,7 @@ namespaces = false
 [dependency-groups]
 dev = [
     "pre-commit>=4.6.2",
+    "pytest>=9.1.1",
     "ruff>=0.16.10",
 ]
 
@@ -30,4 +31,11 @@ dev = [
 # whether ruff runs from here or from the repo root (pre-commit).
 [tool.ruff]
 src = ["."]
+
+# Tests import the project's packages (secret_store, ...) from this directory.
+# importlib mode lets test files in different folders share a basename.
+[tool.pytest.ini_options]
+pythonpath = ["."]
+testpaths = ["tests"]
+addopts = ["--import-mode=importlib"]
 
