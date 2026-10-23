@@ -38,11 +38,6 @@ STACK_CONFIG: dict[str, dict[str, str]] = {
         "azure-native:location": "westeurope",
         "resourceGroupName": "msdhnrg",
         "keyVault.name": "msdhnkv",
-        "keyVault.allowedSubnetIds[0]": "<subnet-resource-id>",
-        'keyVault.roleAssignments["<entra-object-id>"].principal_type': "Group",
-        'keyVault.roleAssignments["<entra-object-id>"].role_definition_ids[0]': (
-            "<role-definition-resource-id>"
-        ),
         # Needed once deploy_front_door(ctx) is enabled in program.py:
         # "frontDoor.name": "<globally-unique-front-door-name>",
         # "frontDoor.originHostName": "<origin-dns-hostname>",
