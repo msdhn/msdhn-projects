@@ -1,9 +1,11 @@
-"""Create or update a core-service stack with the Pulumi Automation API.
+"""Create, update or destroy a core-service stack with the Pulumi Automation API.
 
 Run from this directory:
 
-    uv run python deploy.py core-service         # preview
-    uv run python deploy.py core-service --up    # deploy
+    uv run python deploy.py core-service             # preview
+    uv run python deploy.py core-service --up        # deploy
+    uv run python deploy.py core-service --destroy   # delete everything, after confirming
+    uv run python deploy.py core-service --remove    # then delete the empty stack itself
 
 This file is the whole Pulumi project definition: the program is
 program.pulumi_program, run inline, and all project and stack settings live
@@ -46,7 +48,7 @@ STACK_CONFIG: dict[str, dict[str, str]] = {
 }
 
 
-def deploy(stack_name: str, up: bool) -> None:
+def deploy(stack_name: str, action: str) -> None:
     config = {**PROJECT_CONFIG, **STACK_CONFIG[stack_name]}
     placeholders = [
         key for key, value in config.items() if "<" in key or value.startswith("<")
@@ -77,21 +79,72 @@ def deploy(stack_name: str, up: bool) -> None:
             path=True,
         )
 
-        if not up:
+        if action == "preview":
             stack.preview(on_output=print)
-            return
+        elif action == "up":
+            result = stack.up(on_output=print)
+            for name, output in result.outputs.items():
+                print(f"{name} = {'[secret]' if output.secret else output.value}")
+        elif action == "destroy":
+            destroy(stack)
+        else:
+            remove(stack)
 
-        result = stack.up(on_output=print)
-        for name, output in result.outputs.items():
-            print(f"{name} = {'[secret]' if output.secret else output.value}")
+
+def destroy(stack: auto.Stack) -> None:
+    """Show what would be deleted, then destroy only if the stack name is typed."""
+    stack.preview_destroy(on_output=print)
+    try:
+        answer = input(
+            f"\nType the stack name ({stack.name}) to destroy all of the above: "
+        )
+    except EOFError:  # no terminal, e.g. in a pipeline
+        answer = ""
+    if answer.strip() != stack.name:
+        raise SystemExit("Not confirmed; nothing was destroyed.")
+    stack.destroy(on_output=print)
+
+
+def remove(stack: auto.Stack) -> None:
+    """Delete the stack itself, with its history and config, once it is empty."""
+    # Removing a stack only forgets its resources; it never deletes them from
+    # the cloud. Refuse while any remain, so nothing is left running untracked.
+    if stack.export_stack().deployment.get("resources"):
+        raise SystemExit(
+            f"Stack {stack.name!r} still has resources; run --destroy first."
+        )
+    stack.workspace.remove_stack(stack.name)
+    print(f"Stack {stack.name!r} removed, with its history and config.")
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("stack", choices=sorted(STACK_CONFIG))
-    parser.add_argument("--up", action="store_true", help="deploy instead of preview")
+    actions = parser.add_mutually_exclusive_group()
+    actions.add_argument(
+        "--up",
+        dest="action",
+        action="store_const",
+        const="up",
+        default="preview",
+        help="deploy instead of preview",
+    )
+    actions.add_argument(
+        "--destroy",
+        dest="action",
+        action="store_const",
+        const="destroy",
+        help="delete every resource in the stack, after confirming",
+    )
+    actions.add_argument(
+        "--remove",
+        dest="action",
+        action="store_const",
+        const="remove",
+        help="delete the stack itself once --destroy has emptied it",
+    )
     args = parser.parse_args()
-    deploy(args.stack, args.up)
+    deploy(args.stack, args.action)
 
 
 if __name__ == "__main__":

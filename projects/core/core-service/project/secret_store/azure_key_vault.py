@@ -45,7 +45,7 @@ class ManagementAzureKeyVault(ComponentResource):
                 #     # ],
                 # ),
             ),
-            opts=ResourceOptions(parent=self, protect=True),
+            opts=ResourceOptions(parent=self, protect=False),
         )
 
         # for principal_id, access in args.role_assignments.items():

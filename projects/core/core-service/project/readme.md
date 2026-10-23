@@ -94,9 +94,15 @@ This creates an Azure Front Door Standard profile, a single HTTPS origin, a heal
 ## Preview and Deploy
 
 ```sh
-uv run python deploy.py core-service         # preview
-uv run python deploy.py core-service --up    # deploy
+uv run python deploy.py core-service             # preview
+uv run python deploy.py core-service --up        # deploy
+uv run python deploy.py core-service --destroy   # delete everything, after confirming
+uv run python deploy.py core-service --remove    # then delete the empty stack itself
 ```
+
+`--destroy` first shows what would be deleted, then asks you to type the stack name; anything else, or no terminal (as in a pipeline), exits without destroying. Azure keeps a deleted Key Vault in a soft-deleted state (90 days by default), and its name stays reserved. Because resource names are verbatim, deploying again with the same `keyVault.name` fails until the vault is purged (`az keyvault purge --name <vault-name>`) or the name is changed.
+
+`--remove` deletes the stack itself, with its history and config, from the Pulumi backend. It refuses while the stack still has resources: removing a stack never deletes cloud resources, it only stops Pulumi tracking them. Run `--destroy` first. The Pulumi backend still keeps inert backup snapshots of the removed stack under `.pulumi/backups/<project>/<stack>/` and a `.pulumi/stacks/<project>/<stack>.json.bak`; delete those blobs from the state container if you need every trace gone.
 
 `deploy.py` creates the stack if it does not exist, writes its config, then previews or deploys. Outputs are printed at the end of `--up`. It needs the same environment as the Pulumi CLI: a Pulumi backend login (`pulumi login`, `PULUMI_ACCESS_TOKEN` or `PULUMI_BACKEND_URL`) and `PULUMI_CONFIG_PASSPHRASE`. Always use the same passphrase for a stack; it decrypts the secrets in the stack's state.
 
