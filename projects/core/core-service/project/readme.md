@@ -9,24 +9,22 @@ The project is run entirely through the Pulumi Automation API. There is no `Pulu
 ```text
 deploy.py
 	-> program.pulumi_program()
-			-> stack_context.build_context()
-			-> deployments.deploy_key_vault(ctx)
+			-> deployments.deploy_key_vault(cloud, tags)
 					-> secret_store.create_key_vault(...)
 							-> AzureKeyVault (Pulumi ComponentResource)
 									-> Azure Native Key Vault
-			-> deployments.deploy_front_door(ctx)
+			-> deployments.deploy_front_door(cloud, tags)
 					-> front_door.create_front_door(...)
 							-> AzureFrontDoor (Pulumi ComponentResource)
 ```
 
-`program.py` only lists the components to deploy, in order. Settings shared by every component (cloud, provider options, common tags) are built once in `stack_context.py`. Each module in `deployments/` reads its component's config section, calls the capability factory, and exports the outputs. When a component needs another's outputs, pass them as arguments to its `deploy_*` function from `program.py`.
+`program.py` only lists the components to deploy, in order, and passes each one the settings they all share: the target cloud and the common tags. Each module in `deployments/` reads its component's config section, calls the capability factory, and exports the outputs. When a component needs another's outputs, pass them as arguments to its `deploy_*` function from `program.py`.
 
 The stack code depends on capability protocols rather than Azure implementation classes. Each capability has a factory for provider selection. Azure is currently the only supported cloud; a future provider can add an implementation that satisfies the relevant capability contract. Capability packages do not read this project's config; that mapping lives in `deployments/`.
 
 ```text
 deploy.py                # Automation API driver: project + stack config, preview/up
 program.py               # The Pulumi program: which components to deploy
-stack_context.py         # StackContext: cloud, provider options, common tags
 deployments/
 	key_vault.py         # keyVault config -> create_key_vault -> exports
 	front_door.py        # frontDoor config -> create_front_door -> exports
@@ -91,7 +89,7 @@ Role assignments are created at the Key Vault scope. Select the least-privileged
 
 This creates an Azure Front Door Standard profile, a single HTTPS origin, a health-probed origin group, and a default-domain route that redirects HTTP to HTTPS. It does not configure a custom domain, WAF policy, or private link to the origin.
 
-`azure-native:location` is set per stack in `STACK_CONFIG`. The `cloud` setting is optional and defaults to `azure`. Other values are currently unsupported by the factory.
+`azure-native:location` is set per stack in `STACK_CONFIG`. Resources use Pulumi's default `azure-native` provider; `deploy.py` sets its `subscriptionId` and `tenantId` from `ARM_SUBSCRIPTION_ID` and `ARM_TENANT_ID`. The `cloud` setting is optional and defaults to `azure`. Other values are currently unsupported by the factory.
 
 ## Preview and Deploy
 

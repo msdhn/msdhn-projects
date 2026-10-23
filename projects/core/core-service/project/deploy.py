@@ -13,6 +13,7 @@ afterwards.
 """
 
 import argparse
+import os
 import tempfile
 from pathlib import Path
 
@@ -35,10 +36,10 @@ PROJECT_CONFIG: dict[str, str] = {
 # placeholders and must be filled in before the stack can be used.
 STACK_CONFIG: dict[str, dict[str, str]] = {
     "core-service": {
-        "azure-native:location": "westeurope",
+        "azure-native:location": "northeurope",
         "resourceGroupName": "msdhnrg",
-        "keyVault.name": "msdhnkv",
-        # Needed once deploy_front_door(ctx) is enabled in program.py:
+        "keyVault.name": "msdhnkv1",
+        # Needed once deploy_front_door is enabled in program.py:
         # "frontDoor.name": "<globally-unique-front-door-name>",
         # "frontDoor.originHostName": "<origin-dns-hostname>",
     },
@@ -59,6 +60,10 @@ def deploy(stack_name: str, up: bool) -> None:
     # Loaded here so the Pulumi CLI and the provider plugins it starts inherit
     # these variables, not only the Pulumi program.
     load_dotenv(PROJECT_DIR / ".env")
+    # The default azure-native provider deploys into this subscription and
+    # tenant. ARM_* come from .env locally and from the pipeline in CI.
+    config["azure-native:subscriptionId"] = os.environ["ARM_SUBSCRIPTION_ID"]
+    config["azure-native:tenantId"] = os.environ["ARM_TENANT_ID"]
 
     with tempfile.TemporaryDirectory(prefix=f"{PROJECT_NAME}-") as work_dir:
         stack = auto.create_or_select_stack(

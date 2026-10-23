@@ -6,24 +6,22 @@ from secret_store import (
     KeyVaultPrincipalAccess,
     create_key_vault,
 )
-from stack_context import StackContext
 
 
-def deploy_key_vault(ctx: StackContext) -> KeyVault:
-    config = ctx.config.require_object("keyVault")
+def deploy_key_vault(cloud: str, tags: dict[str, str]) -> KeyVault:
+    config = pulumi.Config().require_object("keyVault")
 
     key_vault = create_key_vault(
-        cloud=ctx.cloud,
+        cloud=cloud,
         name=config["name"],
         args=KeyVaultArgs(
-            tags=ctx.tags,
-            allowed_subnet_ids=config["allowedSubnetIds"],
+            tags=tags,
+            allowed_subnet_ids=config.get("allowedSubnetIds", []),
             role_assignments={
                 principal_id: KeyVaultPrincipalAccess(**access)
-                for principal_id, access in config["roleAssignments"].items()
+                for principal_id, access in config.get("roleAssignments", {}).items()
             },
         ),
-        opts=ctx.opts,
     )
 
     pulumi.export("keyVaultId", key_vault.vault_id)
