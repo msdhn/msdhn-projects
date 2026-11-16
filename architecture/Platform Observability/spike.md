@@ -76,17 +76,6 @@ The spike does not build the production solution.
 - Spoke onboarding automation for all of the above.
 - Protecting the workspace: locks, and who can delete or purge data.
 
-> **Priority:** analyze the existing landing zone policies, the environment split, and AMPLS with private DNS first, because they could change the rest of the design.
-
----
-
-## Out of scope
-
-- Microsoft Sentinel / SOC integration
-- Long-term compliance retention and archive
-- AI observability (token usage, tracing)
-- Automation on alerts (Logic Apps / Functions)
-
 ---
 
 ## Acceptance criteria
