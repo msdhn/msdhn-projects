@@ -1,5 +1,25 @@
 # Platform Observability Spike
 
+## Goal
+
+Work out how to observe the whole MSDHN platform (Core Hub, Data Hub, customer spokes and capability stacks) across four topics:
+
+- **Log collection** to a central Log Analytics workspace in the management subscription
+- **Workbooks / dashboards**, central and per spoke
+- **Alerts** on the collected logs
+- **Health check** for the whole platform, with many teams and customers deploying
+
+**Approach:** build a proof of concept manually in the **Azure portal**, in a sandbox management group with a management subscription and at least two spoke subscriptions. Capture all configuration (resource JSON, policy parameters, KQL, workbook JSON, alert settings) and findings along the way.
+
+**Outcome:** a **technical design document** that:
+
+- records the decisions for each point below
+- describes every component with its configuration, RBAC and dependencies
+- maps each component to the Pulumi project, stack and component that will implement it
+- includes PoC findings, cost estimate and open issues
+
+The design document is the input for implementing the solution as infrastructure as code. The spike does not build the production solution.
+
 ## Log collection
 
 - Policy-enforced diagnostics to the central workspace: does it work across subscriptions, how long does it take, does remediation work, and does the Activity Log policy work?
