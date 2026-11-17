@@ -3,9 +3,8 @@
 ## Context
 
 - The platform runs on Azure in a hub-spoke topology: every spoke serves one customer, the hub and the central services subscription hold shared services.
-- Each customer can run multiple applications, each on its own App Service per environment.
-- Environments: `dev`, `tst`, `ppd` (pre-production) and `prd`.
-- App Services are reachable **only through Front Door** (public network access disabled, Private Link origin).
+- Each customer can run multiple applications, each on its own App Service per environment, in a customer subscription per environment.
+- Environments: `rnd`, `dev`, `tst`, `ppd` (pre-production) and `prd`, grouped into the lifecycles `rnd` (rnd), `npd` (dev, tst) and `prd` (ppd, prd).- App Services are reachable **only through Front Door** (public network access disabled, Private Link origin).
 - `msdhn.com` is the organization's root domain. Its public DNS is served by an on-premises DNS server managed by a central team; record requests are manual.
 - Host names identify the application only; the customer is not part of the name (see `domain_name_design.md`).
 
@@ -84,7 +83,7 @@ flowchart LR
     end
 
     subgraph shared["Shared-service subscription"]
-        kv["Central Key Vault<br/>customer-managed certificates"]
+        kv["Central Key Vaults per lifecycle<br/>kv-plt-rnd · kv-plt-npd · kv-plt-prd<br/>customer-managed certificates"]
         afd["Front Door profiles<br/>afd-plt-rnd · afd-plt-npd · afd-plt-prd"]
     end
 
@@ -111,8 +110,9 @@ Rendered versions: `frontdoor_architecture_traffic.png` and `frontdoor_architect
 | Placement | Front Door is a central service in the central services subscription (`shared-service` project), owned by the platform team. |
 | Profiles | Two Premium profiles: `afd-plt-np` (dev, tst) and `afd-plt-prd` (ppd, prd). |
 | Endpoints | `fde-plt-np` in the non-prod profile; `fde-plt-ppd` and `fde-plt-prd` in the prod profile. |
-| Host names | Flat names under `msdhn.com` for every environment. |
-| Certificates | Per application and environment: Front Door managed certificate (DigiCert, default) or the customer's own certificate, copied from the customer Key Vault to a central Key Vault. |
+| Host names | Flat names under `msdhn.com` for every environment, for example `kmi.msdhn.com` (prd), `kmi-ppd.msdhn.com`, `kmi-tst.msdhn.com`, `kmi-dev.msdhn.com`, `kmi-rnd.msdhn.com`. |
+| Certificate scope | One certificate per application per environment, for exactly that host name (for example `kmi.msdhn.com`, `kmi-dev.msdhn.com`). No wildcard or shared certificates, so an expired or compromised certificate affects one application in one environment only. |
+| Certificates | Per application and environment: Front Door managed certificate (DigiCert, default) or the customer's own certificate, copied from the customer Key Vault to the central Key Vault of its lifecycle. |
 | App Service | Custom domain added (host header preserved), no certificate binding. |
 | Non-prod access | WAF allows corporate IP ranges only. |
 | Self-service | One file per customer per environment (`frontdoor.<env>.yaml`) in the platform repo, changed through pull requests and combined during validation. |
@@ -121,14 +121,18 @@ Rendered versions: `frontdoor_architecture_traffic.png` and `frontdoor_architect
 
 ## Host names
 
-| Environment | Host | Profile / endpoint |
-|---|---|---|
-| dev | `kim-dev.msdhn.com` | `afd-plt-np` / `fde-plt-np` |
-| tst | `kim-tst.msdhn.com` | `afd-plt-np` / `fde-plt-np` |
-| ppd | `kim-ppd.msdhn.com` | `afd-plt-prd` / `fde-plt-ppd` |
-| prd | `kim.msdhn.com` | `afd-plt-prd` / `fde-plt-prd` |
+Flat names under `msdhn.com` for every environment. Example for application `kmi`:
 
-- The suffixes `-dev`, `-tst` and `-ppd` are reserved for environments.
+| Lifecycle | Environment | Host | Front Door profile / endpoint |
+|---|---|---|---|
+| rnd | rnd | `kmi-rnd.msdhn.com` | `afd-plt-rnd` / `fde-plt-rnd` |
+| npd | dev | `kmi-dev.msdhn.com` | `afd-plt-npd` / `fde-plt-npd` |
+| npd | tst | `kmi-tst.msdhn.com` | `afd-plt-npd` / `fde-plt-npd` |
+| prd | ppd | `kmi-ppd.msdhn.com` | `afd-plt-prd` / `fde-plt-ppd` |
+| prd | prd | `kmi.msdhn.com` | `afd-plt-prd` / `fde-plt-prd` |
+
+- Pattern: `<app>-<env>.msdhn.com`, except production: `<app>.msdhn.com`.
+- The suffixes `-rnd`, `-dev`, `-tst` and `-ppd` are reserved for environments.
 - Application names follow the naming rules in `domain_name_design.md` (unique within `msdhn.com`, agreed with the central team, reserved names excluded).
 
 ---
@@ -172,7 +176,7 @@ Each application chooses per environment with `isFrontDoorManagedCertificate` in
 | `isFrontDoorManagedCertificate` | Certificate | Who renews |
 |---|---|---|
 | `true` (default) | Front Door managed certificate (DigiCert) | Front Door, automatically |
-| `false` | Customer's own certificate (for example Sectigo) in the customer Key Vault, copied to the central Key Vault | Customer team |
+| `false` | Customer's own certificate (for example Sectigo) in the customer Key Vault, copied to the central Key Vault of its lifecycle | Customer team |
 
 ### Front Door managed certificates (default)
 
@@ -208,7 +212,16 @@ For applications that need their own certificate (for example a policy or EV req
 | `secretName` | Secret | PFX/PKCS#12, base64, without password (content type `application/x-pkcs12`), or PEM with private key and full chain (content type `application/x-pem-file`) |
 
 - In the central Key Vault the copy is always imported as a **certificate** object, whatever the source, so Front Door and monitoring see one uniform format.
-- Front Door only reads Key Vaults in its own subscription, so the platform copies the certificate to a **central Key Vault** in the Front Door subscription. Front Door references it without a fixed version ("latest") and picks up new versions by itself; this isn't instant, so renewal starts at least two weeks before expiry.
+- Front Door only reads Key Vaults in its own subscription, so the platform copies the certificate to the **central Key Vault of its lifecycle** in the shared-service subscription:
+
+| Source environment (customer Key Vault) | Central Key Vault | Read by Front Door |
+|---|---|---|
+| rnd | `kv-plt-rnd` | `afd-plt-rnd` |
+| dev, tst | `kv-plt-npd` | `afd-plt-npd` |
+| ppd, prd | `kv-plt-prd` | `afd-plt-prd` |
+
+- One central Key Vault per lifecycle keeps production certificates separate: the `npd` and `rnd` profiles and pipelines can never read or overwrite a `ppd` or `prd` certificate.
+- Front Door references the certificate in its lifecycle's central Key Vault without a fixed version ("latest") and picks up new versions by itself; this isn't instant, so renewal starts at least two weeks before expiry.
 - Certificate requirements: RSA key (no elliptic curve), full chain, exportable private key, issued for the application's host name.
 - Front Door validates the domain automatically because the certificate matches the host name, so no `_dnsauth` record is needed for these hosts.
 
@@ -219,17 +232,20 @@ For applications that need their own certificate (for example a policy or EV req
   1. Reads the current version of the source object (certificate or secret, metadata only) and compares it with the `sourceVersion` tag on the central certificate; stops if equal. This works the same for certificates and secrets, and the private key isn't read on unchanged runs.
   2. Reads the certificate in memory: for a certificate object through its secret endpoint, for a secret by decoding PFX or PEM according to its content type.
   3. Checks the certificate: host name matches the application and environment, RSA key, private key present, full chain, not expired, expiry later than the current central copy (never downgrade). Anything else is rejected and reported.
-  4. Imports it into the central Key Vault as a certificate (PFX), tagged with `sourceVersion`, `sourceKeyVault` and `sourceObject`.
+  4. Imports it into the central Key Vault of the application's lifecycle as a certificate (PFX), tagged with `sourceVersion`, `sourceKeyVault` and `sourceObject`.
   5. Never deletes anything centrally.
 - Two service connections (workload identity federation), each restricted to this pipeline:
 
 | Service connection | Role | Scope |
 |---|---|---|
 | `sc-certsync-read` | Key Vault Reader (metadata) + Key Vault Secrets User (content) | Customer Key Vaults named in the configuration (assigned by the spoke stack); Secrets User can be scoped to the individual certificate or secret |
-| `sc-certsync-write` | Key Vault Certificates Officer | Central Key Vault only |
+| `sc-certsync-write-rnd` | Key Vault Certificates Officer | `kv-plt-rnd` only |
+| `sc-certsync-write-npd` | Key Vault Certificates Officer | `kv-plt-npd` only |
+| `sc-certsync-write-prd` | Key Vault Certificates Officer | `kv-plt-prd` only |
 
 - The first task (read connection) gets a short-lived Key Vault access token and passes it as a secret variable to the second task (write connection), so the PFX stays in memory in one script and is never written to disk or pipeline variables.
-- Front Door's managed identity has *Key Vault Secrets User* on the central Key Vault.
+- The sync pipeline runs one stage per lifecycle, each with its own write service connection; the `prd` stage can have its own approvals and reviewers.
+- Each Front Door profile's managed identity has *Key Vault Secrets User* on the central Key Vault of its own lifecycle only.
 - Results (unchanged, copied, rejected with reason, failed) go to the central Log Analytics workspace. Alerts on rejections and failures (platform team and the owning customer team), on central certificates expiring within 30 days, and on the pipeline not running for more than 12 hours.
 - The pipeline YAML is protected with branch policies, because anyone who can change it could read customer private keys.
 
@@ -451,7 +467,7 @@ Front Door is split over two Pulumi projects: `shared-service` owns what changes
 
 | Project / stack | Content | Changes | Approval |
 |---|---|---|---|
-| shared-service | Profiles, endpoints, WAF policies, diagnostic settings, central Key Vault | Rarely | Platform team |
+| shared-service | Profiles, endpoints, WAF policies, diagnostic settings, central Key Vaults (one per lifecycle) | Rarely | Platform team |
 | `frontdoor-route` / `np` | dev and tst: custom domains, routes, origin groups, origins, security policy | Often | None |
 | `frontdoor-route` / `ppd` | ppd: custom domains, routes, origin groups, origins, secrets, security policy | Often | None |
 | `frontdoor-route` / `prd` | prd: custom domains, routes, origin groups, origins, secrets, security policy | Often | Prod approval |
@@ -475,14 +491,14 @@ App Service resources (host name binding, Private Link approval) stay in the spo
 |---|---|
 | Customer configuration | `customers/*/frontdoor.<env>.yaml`, read with the shared loader (validate, combine, take this stack's environments) |
 | Stack configuration | Environments handled by the stack (`np`: dev, tst; `ppd`: ppd; `prd`: prd), profile and endpoint names |
-| Shared resources | `StackReference` to `shared-service`: profile ID, endpoint IDs and host names, WAF policy IDs, central Key Vault ID |
+| Shared resources | `StackReference` to `shared-service`: profile ID, endpoint IDs and host names, WAF policy IDs, central Key Vault ID of the lifecycle |
 
 ### Resources per application and environment
 
 | Resource | Name (example `kim` in prd) | Notes |
 |---|---|---|
 | Custom domain | `kim-msdhn-com` | Host name derived from application name and environment; TLS `ManagedCertificate`, or `CustomerCertificate` with the secret below; minimum TLS 1.2 |
-| Secret | `kim-msdhn-com` | Only with `isFrontDoorManagedCertificate: false`: reference to the central Key Vault certificate, latest version |
+| Secret | `kim-msdhn-com` | Only with `isFrontDoorManagedCertificate: false`: reference to the certificate in the lifecycle's central Key Vault, latest version |
 | Origin group | `og-kim-prd` | Health probes off or `HEAD /health` with a long interval |
 | Origin | `or-kim-prd` | Host name `<app service>.azurewebsites.net`, origin host header empty, Private Link to the App Service, `enforceCertificateNameCheck: false` |
 | Route | `rt-kim-prd` | On the environment's endpoint, one custom domain, HTTPS only with HTTP→HTTPS redirect, `enabled` from the configuration |
@@ -528,7 +544,7 @@ projects/core/frontdoor-route/
 ### Adding an application
 
 1. Customer opens a pull request adding the application to the environment files it needs (typically starting with `frontdoor.dev.yaml`); validation runs and posts the DNS records.
-2. After approval and merge, Pulumi creates the custom domain, origin group, origin and route, with the route **disabled**. With a customer certificate, the sync pipeline runs first so the certificate is in the central Key Vault before Pulumi creates the Front Door secret and domain.
+2. After approval and merge, Pulumi creates the custom domain, origin group, origin and route, with the route **disabled**. With a customer certificate, the sync pipeline runs first so the certificate is in the lifecycle's central Key Vault before Pulumi creates the Front Door secret and domain.
 3. The spoke pipeline approves the Private Link connection on the App Service.
 4. The DNS records (CNAME, `_dnsauth`, `asuid`) are created on the DNS server.
 5. The spoke stack adds the custom domain (host name binding) on the App Service; this needs the `asuid` record from step 4.
