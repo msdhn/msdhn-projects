@@ -1,0 +1,15 @@
+# yaml-language-server: $schema=../../frontdoor-configuration.schema.json
+# Sample: applications of customer-x exposed through Front Door in dev.
+apiVersion: platform.msdhn.com/v1
+kind: FrontDoorConfiguration
+metadata:
+  customer: customer-x
+  environment: dev
+spec:
+  applications:
+    - name: kim                 # kim-dev.msdhn.com
+      appService: /subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg-customerx-kim-dev/providers/Microsoft.Web/sites/app-kim-dev
+      enabled: true
+    - name: kom                 # kom-dev.msdhn.com
+      appService: /subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg-customerx-kom-dev/providers/Microsoft.Web/sites/app-kom-dev
+      enabled: false

@@ -1,0 +1,183 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://platform.msdhn.com/schemas/frontdoor-configuration/v1.json",
+  "title": "FrontDoorConfiguration",
+  "description": "Applications a customer exposes through the platform Front Door in one environment. File location: customers/<customer>/frontdoor.<environment>.yaml",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "apiVersion",
+    "kind",
+    "metadata",
+    "spec"
+  ],
+  "properties": {
+    "apiVersion": {
+      "description": "Schema version of this file.",
+      "const": "platform.msdhn.com/v1"
+    },
+    "kind": {
+      "const": "FrontDoorConfiguration"
+    },
+    "metadata": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "customer",
+        "environment"
+      ],
+      "properties": {
+        "customer": {
+          "description": "Customer that owns the applications. Must equal the folder name under customers/.",
+          "type": "string",
+          "pattern": "^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$"
+        },
+        "environment": {
+          "description": "Target environment. Must equal the <environment> part of the file name.",
+          "enum": [
+            "dev",
+            "tst",
+            "ppd",
+            "prd"
+          ]
+        }
+      }
+    },
+    "spec": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "applications"
+      ],
+      "properties": {
+        "applications": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/application"
+          }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "application": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "appService"
+      ],
+      "properties": {
+        "name": {
+          "description": "Application name, unique within msdhn.com. Host name: <name>.msdhn.com in prd, <name>-<environment>.msdhn.com in other environments.",
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 59,
+          "pattern": "^[a-z0-9]([a-z0-9-]*[a-z0-9])?$",
+          "allOf": [
+            {
+              "not": {
+                "pattern": "-(dev|tst|ppd)$"
+              },
+              "$comment": "Environment suffixes are reserved."
+            },
+            {
+              "not": {
+                "enum": [
+                  "api",
+                  "portal",
+                  "auth",
+                  "admin",
+                  "status",
+                  "www",
+                  "mail"
+                ]
+              },
+              "$comment": "Reserved names."
+            }
+          ]
+        },
+        "appService": {
+          "description": "Resource ID of the App Service (origin) in the customer's subscription for this environment.",
+          "type": "string",
+          "pattern": "^/subscriptions/[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}/[Rr]esource[Gg]roups/[^/]+/providers/[Mm]icrosoft\\.[Ww]eb/[Ss]ites/[^/]+$"
+        },
+        "enabled": {
+          "description": "false keeps the application deployed but turns its route off.",
+          "type": "boolean",
+          "default": true
+        },
+        "isFrontDoorManagedCertificate": {
+          "description": "true: Front Door issues and renews the certificate (DigiCert). false: the customer provides the certificate in its own Key Vault and the platform copies it to the central Key Vault.",
+          "type": "boolean",
+          "default": true
+        },
+        "keyVaultName": {
+          "description": "Customer Key Vault (in the customer's subscription for this environment) holding the certificate. Required when isFrontDoorManagedCertificate is false.",
+          "type": "string",
+          "pattern": "^[a-zA-Z](?!.*--)[a-zA-Z0-9-]{1,22}[a-zA-Z0-9]$"
+        },
+        "certificateName": {
+          "description": "Key Vault certificate object in keyVaultName. Use either certificateName or secretName when isFrontDoorManagedCertificate is false.",
+          "type": "string",
+          "pattern": "^[0-9a-zA-Z-]{1,127}$"
+        },
+        "secretName": {
+          "description": "Key Vault secret in keyVaultName holding the certificate with its private key: PFX/PKCS#12, base64, without password (content type application/x-pkcs12), or PEM with key and full chain (content type application/x-pem-file). Use either certificateName or secretName when isFrontDoorManagedCertificate is false.",
+          "type": "string",
+          "pattern": "^[0-9a-zA-Z-]{1,127}$"
+        }
+      },
+      "if": {
+        "properties": {
+          "isFrontDoorManagedCertificate": {
+            "const": false
+          }
+        },
+        "required": [
+          "isFrontDoorManagedCertificate"
+        ]
+      },
+      "then": {
+        "required": [
+          "keyVaultName"
+        ],
+        "oneOf": [
+          {
+            "required": [
+              "certificateName"
+            ]
+          },
+          {
+            "required": [
+              "secretName"
+            ]
+          }
+        ],
+        "$comment": "Exactly one source: a Key Vault certificate or a Key Vault secret."
+      },
+      "else": {
+        "not": {
+          "anyOf": [
+            {
+              "required": [
+                "keyVaultName"
+              ]
+            },
+            {
+              "required": [
+                "certificateName"
+              ]
+            },
+            {
+              "required": [
+                "secretName"
+              ]
+            }
+          ]
+        },
+        "$comment": "keyVaultName, certificateName and secretName are only allowed with isFrontDoorManagedCertificate: false."
+      }
+    }
+  }
+}

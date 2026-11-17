@@ -1,0 +1,19 @@
+# yaml-language-server: $schema=../../frontdoor-configuration.schema.json
+# Sample: applications of customer-x exposed through Front Door in prd.
+apiVersion: platform.msdhn.com/v1
+kind: FrontDoorConfiguration
+metadata:
+  customer: customer-x
+  environment: prd
+spec:
+  applications:
+    - name: kim                 # kim.msdhn.com
+      appService: /subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg-customerx-kim-prd/providers/Microsoft.Web/sites/app-kim-prd
+      enabled: true
+      isFrontDoorManagedCertificate: true      # Front Door issues and renews (default)
+    - name: kom                 # kom.msdhn.com
+      appService: /subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg-customerx-kom-prd/providers/Microsoft.Web/sites/app-kom-prd
+      enabled: true
+      isFrontDoorManagedCertificate: false     # own certificate, copied to the central Key Vault
+      keyVaultName: kv-customerx-prd
+      certificateName: kom-msdhn-com
