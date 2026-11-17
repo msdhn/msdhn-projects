@@ -1,0 +1,18 @@
+# yaml-language-server: $schema=../../../../../frontdoor-configuration.schema.json
+# Sample: applications of customer op001 exposed through Front Door in ppd.
+apiVersion: platform.msdhn.com/v1
+kind: FrontDoorConfiguration
+metadata:
+  customer: op001
+  environment: ppd
+spec:
+  applications:
+    - name: kmi                 # kmi-ppd.msdhn.com
+      appService: /subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg-op001-kmi-ppd/providers/Microsoft.Web/sites/app-kmi-ppd
+      enabled: true
+    - name: kom                 # kom-ppd.msdhn.com
+      appService: /subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg-op001-kom-ppd/providers/Microsoft.Web/sites/app-kom-ppd
+      enabled: true
+      isFrontDoorManagedCertificate: false     # own certificate, stored as a Key Vault secret (PFX)
+      keyVaultName: kv-op001-ppd
+      secretName: kom-ppd-msdhn-com-pfx

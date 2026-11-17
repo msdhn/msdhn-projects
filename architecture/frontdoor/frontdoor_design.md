@@ -73,7 +73,7 @@ flowchart LR
 ```mermaid
 flowchart LR
     subgraph ops["Platform repo + Azure DevOps"]
-        cfg["customers/*/frontdoor.env.yaml"]
+        cfg["configuration/opNNN/front-door/env/<br/>front-door-config.yaml"]
         route["frontdoor-route<br/>one stack per lifecycle"]
         sync["Certificate sync<br/>every 6 h"]
     end
@@ -115,7 +115,7 @@ Rendered versions: `frontdoor_architecture_traffic.png` and `frontdoor_architect
 | Certificates | Per application and environment: Front Door managed certificate (DigiCert, default) or the customer's own certificate, copied from the customer Key Vault to the central Key Vault of its lifecycle. |
 | App Service | Custom domain added (host header preserved), no certificate binding. |
 | Non-prod access | WAF allows corporate IP ranges only. |
-| Self-service | One file per customer per environment (`frontdoor.<env>.yaml`) in the platform repo, changed through pull requests and combined during validation. |
+| Self-service | One file per customer per environment (`configuration/<customer>/front-door/<environment>/front-door-config.yaml`) in the platform repo, changed through pull requests and combined during validation. |
 
 ---
 
@@ -141,12 +141,12 @@ Flat names under `msdhn.com` for every environment. Example for application `kmi
 
 | Item | One per | Owned by stack |
 |---|---|---|
-| Profile | Environment group (np, prd) | shared-service |
-| Endpoint | np; ppd and prd in the prod profile | shared-service |
+| Profile | Lifecycle (`afd-plt-rnd`, `afd-plt-npd`, `afd-plt-prd`) | shared-service |
+| Endpoint | `fde-plt-rnd`, `fde-plt-npd`; `fde-plt-ppd` and `fde-plt-prd` in the prd profile | shared-service |
 | WAF policies | Profile / environment | shared-service |
 | Security policies (WAF policy ↔ domains) | `frontdoor-route` stack | frontdoor-route |
 | Custom domain | Application and environment | frontdoor-route |
-| Route | Application and environment | frontdoor-route |
+| Route | Host name (application and environment) | frontdoor-route |
 | Origin group and origin | Application and environment | frontdoor-route |
 | Secret (reference to the central Key Vault certificate) | Application and environment with a customer certificate | frontdoor-route |
 
@@ -155,6 +155,23 @@ Flat names under `msdhn.com` for every environment. Example for application `kmi
 - No rule sets and no wildcard domains: every host has its own route to its own origin group.
 - Origin host header is empty, so the public host name is passed through to the App Service.
 - Disabling an endpoint takes every application on it offline; a single application is taken offline by disabling its route.
+
+### One route per host name
+
+Every host name has exactly one route: one route per application **per environment**. Each route has one custom domain, the pattern `/*` and its own origin group. Example for `kmi`:
+
+| Host | Route | Origin group → App Service |
+|---|---|---|
+| `kmi-rnd.msdhn.com` | `rt-kmi-rnd` | `og-kmi-rnd` → `app-kmi-rnd` |
+| `kmi-dev.msdhn.com` | `rt-kmi-dev` | `og-kmi-dev` → `app-kmi-dev` |
+| `kmi-tst.msdhn.com` | `rt-kmi-tst` | `og-kmi-tst` → `app-kmi-tst` |
+| `kmi-ppd.msdhn.com` | `rt-kmi-ppd` | `og-kmi-ppd` → `app-kmi-ppd` |
+| `kmi.msdhn.com` | `rt-kmi-prd` | `og-kmi-prd` → `app-kmi-prd` |
+
+- Front Door selects the route by the request's host name: the host matches a custom domain, and each domain belongs to exactly one route. No rule sets or path matching are needed to separate applications.
+- Routes are not shared between host names: a route with several domains sends them all to the same origin group, while every environment has its own App Service.
+- Disabling one route takes one application offline in one environment, without affecting anything else.
+- Because hosts and routes map 1:1, the Premium limit of about 200 routes per profile is also the limit on host names per profile.
 
 ### Why pre-production sits on the prod profile
 
@@ -389,7 +406,7 @@ Each origin group has a single origin, so probes can't fail over to anything. Pr
 
 ---
 
-## Self-service: `frontdoor.<env>.yaml`
+## Self-service: `front-door-config.yaml`
 
 Customers add, change and remove their applications through pull requests in the platform repo.
 
@@ -398,66 +415,84 @@ Customers add, change and remove their applications through pull requests in the
 One file per customer per environment:
 
 ```
-customers/
-  customer-x/
-    frontdoor.dev.yaml
-    frontdoor.tst.yaml
-    frontdoor.ppd.yaml
-    frontdoor.prd.yaml
-  customer-y/
-    frontdoor.dev.yaml
-    frontdoor.prd.yaml
+configuration/
+  op001/
+    front-door/
+      rnd/front-door-config.yaml
+      dev/front-door-config.yaml
+      tst/front-door-config.yaml
+      ppd/front-door-config.yaml
+      prd/front-door-config.yaml
+  op002/
+    front-door/
+      dev/front-door-config.yaml
+      prd/front-door-config.yaml
 ```
 
-- The customer is taken from the **folder name** and the environment from the **file name**, never from fields in the file.
-- An environment file only exists if the customer uses that environment.
-- Branch policy with path-based required reviewers: a customer team can only change its own folder; the platform team approves every pull request. Changes to `frontdoor.prd.yaml` files can have their own reviewers and always go through the prod approval gate.
+- Customers are identified by a number: `op001`, `op002`, …
+- Path pattern: `configuration/<customer>/front-door/<environment>/front-door-config.yaml`.
+- The customer is taken from the **customer folder** and the environment from the **environment folder**; `metadata.customer` and `metadata.environment` in the file must match them.
+- An environment folder only exists if the customer uses that environment.
+- Branch policy with path-based required reviewers: a customer team can only change its own `configuration/<customer>/` folder; the platform team approves every pull request. Changes under `*/front-door/prd/` can have their own reviewers and always go through the prod approval gate.
 - Each `frontdoor-route` stack reads only the files of its own environments, so a non-prod change never touches a prod deployment.
 
-### Schema
+### File format
 
 ```yaml
-# customers/customer-x/frontdoor.prd.yaml
-apps:
-  - name: kim
-    appService: /subscriptions/.../sites/kim-prd
-    enabled: true
-  - name: kom
-    appService: /subscriptions/.../sites/kom-prd
-    enabled: true
-    isFrontDoorManagedCertificate: false
-    keyVaultName: kv-customerx-prd
-    certificateName: kom-msdhn-com
+# configuration/op001/front-door/prd/front-door-config.yaml
+apiVersion: platform.msdhn.com/v1
+kind: FrontDoorConfiguration
+metadata:
+  customer: op001
+  environment: prd
+spec:
+  applications:
+    - name: kmi                 # kmi.msdhn.com
+      appService: /subscriptions/.../sites/app-kmi-prd
+      enabled: true
+    - name: kom                 # kom.msdhn.com
+      appService: /subscriptions/.../sites/app-kom-prd
+      enabled: true
+      isFrontDoorManagedCertificate: false
+      keyVaultName: kv-op001-prd
+      certificateName: kom-msdhn-com
 ```
 
 ```yaml
-# customers/customer-x/frontdoor.dev.yaml
-apps:
-  - name: kim
-    appService: /subscriptions/.../sites/kim-dev
-    enabled: false
+# configuration/op001/front-door/dev/front-door-config.yaml
+apiVersion: platform.msdhn.com/v1
+kind: FrontDoorConfiguration
+metadata:
+  customer: op001
+  environment: dev
+spec:
+  applications:
+    - name: kmi                 # kmi-dev.msdhn.com
+      appService: /subscriptions/.../sites/app-kmi-dev
+      enabled: false
 ```
 
 - An application listed in an environment file is deployed in that environment; `enabled: false` only turns its route off.
 - `isFrontDoorManagedCertificate` defaults to `true`. With `false`, `keyVaultName` and exactly one of `certificateName` or `secretName` are required; with `true` none of them is allowed.
-- The file format is defined by `frontdoor-configuration.schema.json` (`apiVersion: platform.msdhn.com/v1`, `kind: FrontDoorConfiguration`); samples are in `samples/customer-x/`.
+- The file format is defined by `frontdoor-configuration.schema.json` (`apiVersion: platform.msdhn.com/v1`, `kind: FrontDoorConfiguration`); samples are in `samples/configuration/op001/front-door/`.
 - An application removed from an environment file is deleted from that environment by Pulumi.
-- A platform-owned mapping decides where each environment goes: `dev, tst → afd-plt-np/fde-plt-np`, `ppd → afd-plt-prd/fde-plt-ppd`, `prd → afd-plt-prd/fde-plt-prd`.
+- A platform-owned mapping decides where each environment goes: `rnd → afd-plt-rnd/fde-plt-rnd`, `dev, tst → afd-plt-npd/fde-plt-npd`, `ppd → afd-plt-prd/fde-plt-ppd`, `prd → afd-plt-prd/fde-plt-prd`.
 - A platform-owned mapping of customer → allowed subscriptions per environment ensures an application only points at App Services in its own customer's subscriptions.
 
 ### Pull request validation
 
 Validation loads **all** environment files of **all** customers and combines them into one view per application (application → environments), then checks:
 
+- Path: matches `configuration/op<nnn>/front-door/<environment>/front-door-config.yaml`, with environment `rnd`, `dev`, `tst`, `ppd` or `prd`.
+- `metadata.customer` and `metadata.environment` match the folders.
 - Name: naming rules, not reserved, and owned by one customer only. The same name in two customers' folders, in any environment, is rejected.
-- File names: only `frontdoor.dev.yaml`, `frontdoor.tst.yaml`, `frontdoor.ppd.yaml`, `frontdoor.prd.yaml`.
 - No duplicate application within one environment file.
 - App Service exists in the customer's subscription for that environment.
 - For customer certificates: the Key Vault is in the customer's subscription for that environment, the certificate or secret exists, has a supported format (for secrets: content type PFX or PEM), matches the host name and meets the certificate requirements.
-- Profile limits are not exceeded (dev + tst on the non-prod profile, ppd + prd on the prod profile).
+- Profile limits are not exceeded (rnd on `afd-plt-rnd`, dev + tst on `afd-plt-npd`, ppd + prd on `afd-plt-prd`).
 - Warnings for an inconsistent application, for example present in `prd` but not in `ppd`, or removed from some environments but not others. Warnings don't block the pull request.
 - `pulumi preview` of the affected stacks and the DNS records to request are posted to the pull request.
-- A change to any `frontdoor.prd.yaml` requires the prod approval gate.
+- A change to any file under `*/front-door/prd/` requires the prod approval gate.
 
 One loader (read all files, combine, validate) is shared by the pull request validation and the Front Door stacks, so all read the files the same way. Each stack then takes only its own environments from the combined view.
 
@@ -489,7 +524,7 @@ App Service resources (host name binding, Private Link approval) stay in the spo
 
 | Input | Source |
 |---|---|
-| Customer configuration | `customers/*/frontdoor.<env>.yaml`, read with the shared loader (validate, combine, take this stack's environments) |
+| Customer configuration | `configuration/*/front-door/*/front-door-config.yaml`, read with the shared loader (validate, combine, take this stack's environments) |
 | Stack configuration | Environments handled by the stack (`np`: dev, tst; `ppd`: ppd; `prd`: prd), profile and endpoint names |
 | Shared resources | `StackReference` to `shared-service`: profile ID, endpoint IDs and host names, WAF policy IDs, central Key Vault ID of the lifecycle |
 
@@ -543,7 +578,7 @@ projects/core/frontdoor-route/
 
 ### Adding an application
 
-1. Customer opens a pull request adding the application to the environment files it needs (typically starting with `frontdoor.dev.yaml`); validation runs and posts the DNS records.
+1. Customer opens a pull request adding the application to the environment files it needs (typically starting with `configuration/<customer>/front-door/dev/front-door-config.yaml`); validation runs and posts the DNS records.
 2. After approval and merge, Pulumi creates the custom domain, origin group, origin and route, with the route **disabled**. With a customer certificate, the sync pipeline runs first so the certificate is in the lifecycle's central Key Vault before Pulumi creates the Front Door secret and domain.
 3. The spoke pipeline approves the Private Link connection on the App Service.
 4. The DNS records (CNAME, `_dnsauth`, `asuid`) are created on the DNS server.

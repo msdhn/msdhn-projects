@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://platform.msdhn.com/schemas/frontdoor-configuration/v1.json",
   "title": "FrontDoorConfiguration",
-  "description": "Applications a customer exposes through the platform Front Door in one environment. File location: customers/<customer>/frontdoor.<environment>.yaml",
+  "description": "Applications a customer exposes through the platform Front Door in one environment. File location: configuration/<customer>/front-door/<environment>/front-door-config.yaml",
   "type": "object",
   "additionalProperties": false,
   "required": [
@@ -28,13 +28,14 @@
       ],
       "properties": {
         "customer": {
-          "description": "Customer that owns the applications. Must equal the folder name under customers/.",
+          "description": "Customer number (op001, op002, \u2026). Must equal the <customer> folder in the path.",
           "type": "string",
-          "pattern": "^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$"
+          "pattern": "^op[0-9]{3}$"
         },
         "environment": {
-          "description": "Target environment. Must equal the <environment> part of the file name.",
+          "description": "Target environment. Must equal the <environment> folder in the path. Lifecycles: rnd (rnd), npd (dev, tst), prd (ppd, prd).",
           "enum": [
+            "rnd",
             "dev",
             "tst",
             "ppd",
@@ -69,7 +70,7 @@
       ],
       "properties": {
         "name": {
-          "description": "Application name, unique within msdhn.com. Host name: <name>.msdhn.com in prd, <name>-<environment>.msdhn.com in other environments.",
+          "description": "Application name, unique within msdhn.com. Host name: <name>.msdhn.com in prd, <name>-<environment>.msdhn.com in rnd, dev, tst and ppd.",
           "type": "string",
           "minLength": 1,
           "maxLength": 59,
@@ -77,7 +78,7 @@
           "allOf": [
             {
               "not": {
-                "pattern": "-(dev|tst|ppd)$"
+                "pattern": "-(rnd|dev|tst|ppd)$"
               },
               "$comment": "Environment suffixes are reserved."
             },

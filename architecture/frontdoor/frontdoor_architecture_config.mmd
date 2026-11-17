@@ -1,6 +1,6 @@
 flowchart LR
     subgraph ops["Platform repo + Azure DevOps"]
-        cfg["customers/*/frontdoor.env.yaml"]
+        cfg["configuration/opNNN/front-door/env/<br/>front-door-config.yaml"]
         route["frontdoor-route<br/>one stack per lifecycle"]
         sync["Certificate sync<br/>every 6 h"]
     end

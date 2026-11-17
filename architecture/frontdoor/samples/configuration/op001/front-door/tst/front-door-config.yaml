@@ -1,0 +1,15 @@
+# yaml-language-server: $schema=../../../../../frontdoor-configuration.schema.json
+# Sample: applications of customer op001 exposed through Front Door in tst.
+apiVersion: platform.msdhn.com/v1
+kind: FrontDoorConfiguration
+metadata:
+  customer: op001
+  environment: tst
+spec:
+  applications:
+    - name: kmi                 # kmi-tst.msdhn.com
+      appService: /subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg-op001-kmi-tst/providers/Microsoft.Web/sites/app-kmi-tst
+      enabled: true
+    - name: kom                 # kom-tst.msdhn.com
+      appService: /subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg-op001-kom-tst/providers/Microsoft.Web/sites/app-kom-tst
+      enabled: true
