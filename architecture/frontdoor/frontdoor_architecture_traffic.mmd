@@ -1,0 +1,40 @@
+flowchart LR
+    user["Users"]
+
+    subgraph urls["Example URLs"]
+        urnd["kmi-rnd.msdhn.com<br/>kom-rnd.msdhn.com"]
+        unpd["kmi-dev.msdhn.com<br/>kom-tst.msdhn.com"]
+        uprd["kmi.msdhn.com<br/>kom-ppd.msdhn.com"]
+    end
+
+    subgraph shared["Shared-service subscription"]
+        afdrnd["Front Door afd-plt-rnd<br/>lifecycle rnd · env rnd"]
+        afdnpd["Front Door afd-plt-npd<br/>lifecycle npd · env dev, tst"]
+        afdprd["Front Door afd-plt-prd<br/>lifecycle prd · env ppd, prd"]
+    end
+
+    subgraph subrnd["Customer subscription · rnd"]
+        arnd["app-kmi-rnd<br/>app-kom-rnd"]
+    end
+    subgraph subdev["Customer subscription · dev"]
+        adev["app-kmi-dev"]
+    end
+    subgraph subtst["Customer subscription · tst"]
+        atst["app-kom-tst"]
+    end
+    subgraph subppd["Customer subscription · ppd"]
+        appd["app-kom-ppd"]
+    end
+    subgraph subprd["Customer subscription · prd"]
+        aprd["app-kmi-prd"]
+    end
+
+    user --> urnd & unpd & uprd
+    urnd -->|CNAME| afdrnd
+    unpd -->|CNAME| afdnpd
+    uprd -->|CNAME| afdprd
+    afdrnd -->|Private Link| arnd
+    afdnpd -->|Private Link| adev
+    afdnpd -->|Private Link| atst
+    afdprd -->|Private Link| appd
+    afdprd -->|Private Link| aprd

@@ -13,45 +13,94 @@
 
 ## Architecture overview
 
+**Terms**
+
+- **Lifecycle:** `rnd`, `npd`, `prd`. Each lifecycle has its own Front Door profile.
+- **Environment:** `rnd`, `dev`, `tst`, `ppd`, `prd`. Lifecycle `rnd` holds environment `rnd`; lifecycle `npd` holds `dev` and `tst`; lifecycle `prd` holds `ppd` and `prd`. Each customer has its own subscription per environment for the backend App Services.
+
+| Lifecycle | Front Door profile | Environments | Backend App Services (customer subscriptions) |
+|---|---|---|---|
+| rnd | `afd-plt-rnd` | rnd | rnd |
+| npd | `afd-plt-npd` | dev, tst | dev, tst |
+| prd | `afd-plt-prd` | ppd, prd | ppd, prd |
+
+### Request flow
+
 ```mermaid
 flowchart LR
     user["Users"]
-    dns["On-prem DNS (public)<br/>CNAME · _dnsauth · asuid"]
+
+    subgraph urls["Example URLs"]
+        urnd["kmi-rnd.msdhn.com<br/>kom-rnd.msdhn.com"]
+        unpd["kmi-dev.msdhn.com<br/>kom-tst.msdhn.com"]
+        uprd["kmi.msdhn.com<br/>kom-ppd.msdhn.com"]
+    end
 
     subgraph shared["Shared-service subscription"]
-        direction TB
-        afdprd["Front Door afd-plt-prd<br/>fde-plt-prd · fde-plt-ppd<br/>WAF: managed rules"]
-        afdnp["Front Door afd-plt-np<br/>fde-plt-np (dev · tst)<br/>WAF: corporate IPs only"]
-        kv["Central Key Vault<br/>customer certificates only"]
+        afdrnd["Front Door afd-plt-rnd<br/>lifecycle rnd · env rnd"]
+        afdnpd["Front Door afd-plt-npd<br/>lifecycle npd · env dev, tst"]
+        afdprd["Front Door afd-plt-prd<br/>lifecycle prd · env ppd, prd"]
     end
 
-    subgraph spoke["Customer spoke subscription"]
-        direction TB
-        app["App Services<br/>dev · tst · ppd · prd<br/>public access disabled"]
-        ckv["Customer Key Vault"]
+    subgraph subrnd["Customer subscription · rnd"]
+        arnd["app-kmi-rnd<br/>app-kom-rnd"]
+    end
+    subgraph subdev["Customer subscription · dev"]
+        adev["app-kmi-dev"]
+    end
+    subgraph subtst["Customer subscription · tst"]
+        atst["app-kom-tst"]
+    end
+    subgraph subppd["Customer subscription · ppd"]
+        appd["app-kom-ppd"]
+    end
+    subgraph subprd["Customer subscription · prd"]
+        aprd["app-kmi-prd"]
     end
 
+    user --> urnd & unpd & uprd
+    urnd -->|CNAME| afdrnd
+    unpd -->|CNAME| afdnpd
+    uprd -->|CNAME| afdprd
+    afdrnd -->|Private Link| arnd
+    afdnpd -->|Private Link| adev
+    afdnpd -->|Private Link| atst
+    afdprd -->|Private Link| appd
+    afdprd -->|Private Link| aprd
+```
+
+### Configuration and certificates
+
+```mermaid
+flowchart LR
     subgraph ops["Platform repo + Azure DevOps"]
-        direction TB
         cfg["customers/*/frontdoor.env.yaml"]
-        route["frontdoor-route<br/>np · ppd · prd"]
+        route["frontdoor-route<br/>one stack per lifecycle"]
         sync["Certificate sync<br/>every 6 h"]
     end
 
-    user -.->|resolve| dns
-    user -->|HTTPS| afdprd
-    user -->|HTTPS| afdnp
-    afdprd -->|Private Link| app
-    afdnp -->|Private Link| app
-    kv -.->|certificate| afdprd
+    subgraph cust["Customer subscription (per environment)"]
+        ckv["Customer Key Vault"]
+    end
+
+    subgraph shared["Shared-service subscription"]
+        kv["Central Key Vault<br/>customer-managed certificates"]
+        afd["Front Door profiles<br/>afd-plt-rnd · afd-plt-npd · afd-plt-prd"]
+    end
+
+    mcert["Front Door managed certificates (default)<br/>DigiCert · auto-renewed · stored by Microsoft"]
+    dns["On-prem DNS (public)<br/>CNAME · _dnsauth · asuid"]
 
     cfg --> route
-    route -.->|config| shared
-    ckv -.-> sync
-    sync -.-> kv
+    route -->|domains · routes · origins| afd
+    ckv -->|read| sync
+    sync -->|import| kv
+    kv -->|customer certificate| afd
+    mcert -->|managed certificate| afd
+    dns -.->|validates domains| afd
 ```
 
-Rendered version: `frontdoor_architecture.png`.
+Rendered versions: `frontdoor_architecture_traffic.png` and `frontdoor_architecture_config.png`.
 
 ---
 

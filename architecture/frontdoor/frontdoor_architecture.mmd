@@ -2,34 +2,44 @@ flowchart LR
     user["Users"]
     dns["On-prem DNS (public)<br/>CNAME · _dnsauth · asuid"]
 
+    subgraph urls["Example URLs"]
+        uprd["https://kmi.msdhn.com<br/>https://kom.msdhn.com"]
+        unp["https://kmi-dev.msdhn.com<br/>https://kom-dev.msdhn.com"]
+    end
+
     subgraph shared["Shared-service subscription"]
-        direction TB
         afdprd["Front Door afd-plt-prd<br/>fde-plt-prd · fde-plt-ppd<br/>WAF: managed rules"]
         afdnp["Front Door afd-plt-np<br/>fde-plt-np (dev · tst)<br/>WAF: corporate IPs only"]
-        kv["Central Key Vault<br/>customer certificates only"]
+        mcert["Front Door managed certificates (default)<br/>DigiCert · auto-renewed · stored by Microsoft"]
+        kv["Central Key Vault<br/>customer-managed certificates"]
     end
 
     subgraph spoke["Customer spoke subscription"]
-        direction TB
-        app["App Services<br/>dev · tst · ppd · prd<br/>public access disabled"]
+        aprd["app-kmi-prd<br/>app-kom-prd"]
+        anp["app-kmi-dev<br/>app-kom-dev"]
         ckv["Customer Key Vault"]
     end
 
     subgraph ops["Platform repo + Azure DevOps"]
-        direction TB
         cfg["customers/*/frontdoor.env.yaml"]
         route["frontdoor-route<br/>np · ppd · prd"]
         sync["Certificate sync<br/>every 6 h"]
     end
 
     user -.->|resolve| dns
-    user -->|HTTPS| afdprd
-    user -->|HTTPS| afdnp
-    afdprd -->|Private Link| app
-    afdnp -->|Private Link| app
-    kv -.->|certificate| afdprd
+    user --> uprd
+    user --> unp
+    uprd -->|CNAME to fde-plt-prd| afdprd
+    unp -->|CNAME to fde-plt-np| afdnp
+    afdprd -->|Private Link| aprd
+    afdnp -->|Private Link| anp
+
+    mcert -.->|managed certificate| afdprd
+    mcert -.->|managed certificate| afdnp
+    kv -.->|customer certificate| afdprd
 
     cfg --> route
-    route -.->|config| shared
-    ckv -.-> sync
+    route -.-> afdprd
+    route -.-> afdnp
+    sync -.->|reads| ckv
     sync -.-> kv
