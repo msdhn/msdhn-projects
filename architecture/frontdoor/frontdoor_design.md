@@ -280,15 +280,15 @@ The on-premises DNS server is the **public, authoritative** DNS for `msdhn.com`,
 
 ### Records per host
 
-Example for `kim` in prod:
+Example for `kmi` in prod:
 
 | Name | Type | Value | Purpose |
 |---|---|---|---|
-| `kim.msdhn.com` | CNAME | `fde-plt-prd-<hash>.z01.azurefd.net` | Sends traffic to Front Door (direct, no alias) |
-| `_dnsauth.kim.msdhn.com` | TXT | Front Door validation token | Domain ownership for the managed certificate (not needed with a customer certificate) |
-| `asuid.kim.msdhn.com` | TXT | App Service custom domain verification ID | Lets the App Service accept `kim.msdhn.com` |
+| `kmi.msdhn.com` | CNAME | `fde-plt-prd-<hash>.z01.azurefd.net` | Sends traffic to Front Door (direct, no alias) |
+| `_dnsauth.kmi.msdhn.com` | TXT | Front Door validation token | Domain ownership for the managed certificate (not needed with a customer certificate) |
+| `asuid.kmi.msdhn.com` | TXT | App Service custom domain verification ID | Lets the App Service accept `kmi.msdhn.com` |
 
-- The same three records apply to `kim-rnd`, `kim-dev`, `kim-tst` and `kim-ppd`, with the CNAME pointing to the endpoint of that environment. That is **15 records per application** across five environments.
+- The same three records apply to `kmi-rnd`, `kmi-dev`, `kmi-tst` and `kmi-ppd`, with the CNAME pointing to the endpoint of that environment. That is **15 records per application** across five environments.
 - The `_dnsauth` token is valid for 7 days after Front Door generates it; if the record isn't in place by then, the token is regenerated. The record stays in place afterwards.
 - TTL of 1 hour on all records.
 - Values:
@@ -296,10 +296,10 @@ Example for `kim` in prod:
 ```bash
 # Front Door validation token (_dnsauth)
 az afd custom-domain show -g <rg> --profile-name afd-plt-prd \
-  --custom-domain-name kim-msdhn-com --query validationProperties.validationToken -o tsv
+  --custom-domain-name kmi-msdhn-com --query validationProperties.validationToken -o tsv
 
 # App Service verification ID (asuid) - same for all App Services in one subscription
-az webapp show -g <rg> -n kim-prd --query customDomainVerificationId -o tsv
+az webapp show -g <rg> -n kmi-prd --query customDomainVerificationId -o tsv
 ```
 
 - The pull request validation pipeline prints the records with their values for every new host, so the request to the DNS team is copy-paste.
@@ -310,9 +310,9 @@ az webapp show -g <rg> -n kim-prd --query customDomainVerificationId -o tsv
 Two separate checks exist:
 
 - **Front Door** validates the domain for its managed certificate (`_dnsauth`).
-- **App Service** only accepts host names that are added to it as custom domains. Because the host header is preserved, Front Door forwards requests with `Host: kim.msdhn.com`; without the custom domain the App Service returns 404. Adding the custom domain requires ownership verification, and since the CNAME points at Front Door (not `azurewebsites.net`), the `asuid` TXT record is the only option.
+- **App Service** only accepts host names that are added to it as custom domains. Because the host header is preserved, Front Door forwards requests with `Host: kmi.msdhn.com`; without the custom domain the App Service returns 404. Adding the custom domain requires ownership verification, and since the CNAME points at Front Door (not `azurewebsites.net`), the `asuid` TXT record is the only option.
 
-Front Door **connects** to the App Service default host name (`xyz.azurewebsites.net`, through Private Link), but the origin host header is empty, so it **sends** the original `Host: kim.msdhn.com`. App Service routes on that header, which is why the custom domain and `asuid` are needed.
+Front Door **connects** to the App Service default host name (`xyz.azurewebsites.net`, through Private Link), but the origin host header is empty, so it **sends** the original `Host: kmi.msdhn.com`. App Service routes on that header, which is why the custom domain and `asuid` are needed.
 
 **Decision: the host header is preserved for every application and is not configurable per application.**
 
@@ -351,7 +351,7 @@ az network private-endpoint-connection list --id <appServiceId> \
 
 ### 3. Custom domain (host name binding)
 
-- Pulumi `web.WebAppHostNameBinding` for the public host name (for example `kim.msdhn.com`) with `ssl_state: Disabled`: no certificate binding.
+- Pulumi `web.WebAppHostNameBinding` for the public host name (for example `kmi.msdhn.com`) with `ssl_state: Disabled`: no certificate binding.
 - The binding **fails if the `asuid` TXT record doesn't exist yet**, so it is created after the DNS records are in place (or the stack retries on its next run).
 
 ### 4. Health check (recommended)
@@ -530,13 +530,13 @@ App Service resources (host name binding, Private Link approval) stay in the spo
 
 ### Resources per application and environment
 
-| Resource | Name (example `kim` in prd) | Notes |
+| Resource | Name (example `kmi` in prd) | Notes |
 |---|---|---|
-| Custom domain | `kim-msdhn-com` | Host name derived from application name and environment; TLS `ManagedCertificate`, or `CustomerCertificate` with the secret below; minimum TLS 1.2 |
-| Secret | `kim-msdhn-com` | Only with `isFrontDoorManagedCertificate: false`: reference to the certificate in the lifecycle's central Key Vault, latest version |
-| Origin group | `og-kim-prd` | Health probes off or `HEAD /health` with a long interval |
-| Origin | `or-kim-prd` | Host name `<app service>.azurewebsites.net`, origin host header empty, Private Link to the App Service, `enforceCertificateNameCheck: false` |
-| Route | `rt-kim-prd` | On the environment's endpoint, one custom domain, HTTPS only with HTTP→HTTPS redirect, `enabled` from the configuration |
+| Custom domain | `kmi-msdhn-com` | Host name derived from application name and environment; TLS `ManagedCertificate`, or `CustomerCertificate` with the secret below; minimum TLS 1.2 |
+| Secret | `kmi-msdhn-com` | Only with `isFrontDoorManagedCertificate: false`: reference to the certificate in the lifecycle's central Key Vault, latest version |
+| Origin group | `og-kmi-prd` | Health probes off or `HEAD /health` with a long interval |
+| Origin | `or-kmi-prd` | Host name `<app service>.azurewebsites.net`, origin host header empty, Private Link to the App Service, `enforceCertificateNameCheck: false` |
+| Route | `rt-kmi-prd` | On the environment's endpoint, one custom domain, HTTPS only with HTTP→HTTPS redirect, `enabled` from the configuration |
 
 ### Security policies
 
