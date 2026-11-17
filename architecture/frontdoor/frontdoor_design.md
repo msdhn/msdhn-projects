@@ -11,6 +11,50 @@
 
 ---
 
+## Architecture overview
+
+```mermaid
+flowchart LR
+    user["Users"]
+    dns["On-prem DNS (public)<br/>CNAME · _dnsauth · asuid"]
+
+    subgraph shared["Shared-service subscription"]
+        direction TB
+        afdprd["Front Door afd-plt-prd<br/>fde-plt-prd · fde-plt-ppd<br/>WAF: managed rules"]
+        afdnp["Front Door afd-plt-np<br/>fde-plt-np (dev · tst)<br/>WAF: corporate IPs only"]
+        kv["Central Key Vault<br/>customer certificates only"]
+    end
+
+    subgraph spoke["Customer spoke subscription"]
+        direction TB
+        app["App Services<br/>dev · tst · ppd · prd<br/>public access disabled"]
+        ckv["Customer Key Vault"]
+    end
+
+    subgraph ops["Platform repo + Azure DevOps"]
+        direction TB
+        cfg["customers/*/frontdoor.env.yaml"]
+        route["frontdoor-route<br/>np · ppd · prd"]
+        sync["Certificate sync<br/>every 6 h"]
+    end
+
+    user -.->|resolve| dns
+    user -->|HTTPS| afdprd
+    user -->|HTTPS| afdnp
+    afdprd -->|Private Link| app
+    afdnp -->|Private Link| app
+    kv -.->|certificate| afdprd
+
+    cfg --> route
+    route -.->|config| shared
+    ckv -.-> sync
+    sync -.-> kv
+```
+
+Rendered version: `frontdoor_architecture.png`.
+
+---
+
 ## Decisions
 
 | Topic | Decision |
@@ -354,16 +398,83 @@ One loader (read all files, combine, validate) is shared by the pull request val
 
 ### Stacks
 
-| Stack | Content | Approval |
-|---|---|---|
-| shared-service | Profiles, endpoints, WAF and security policies, diagnostic settings, central Key Vault | Platform team |
-| `frontdoor-route` / `np` | dev and tst domains, routes, origins | None |
-| `frontdoor-route` / `ppd` | ppd domains, routes, origins | None |
-| `frontdoor-route` / `prd` | prd domains, routes, origins | Prod approval |
+Front Door is split over two Pulumi projects: `shared-service` owns what changes rarely, `frontdoor-route` owns what changes with every application.
 
-- The `frontdoor-route` stacks reference the profile from shared-service through a Pulumi `StackReference`.
-- The `frontdoor-route` stacks `ppd` and `prd` share a profile and run one after the other, never in parallel: Front Door rejects concurrent changes on one profile.
+| Project / stack | Content | Changes | Approval |
+|---|---|---|---|
+| shared-service | Profiles, endpoints, WAF policies, diagnostic settings, central Key Vault | Rarely | Platform team |
+| `frontdoor-route` / `np` | dev and tst: custom domains, routes, origin groups, origins, security policy | Often | None |
+| `frontdoor-route` / `ppd` | ppd: custom domains, routes, origin groups, origins, secrets, security policy | Often | None |
+| `frontdoor-route` / `prd` | prd: custom domains, routes, origin groups, origins, secrets, security policy | Often | Prod approval |
+
+Why separate:
+
+- **Blast radius:** onboarding an application can never change a profile, endpoint or WAF rule.
+- **Pace and approvals:** routes change with every application; the shared part changes a few times a year under stricter review.
+- **Speed:** a `frontdoor-route` stack only refreshes the resources of its own environments.
+- **Prod isolation:** `prd` has its own stack and approval gate, although `ppd` and `prd` share a profile.
+
+App Service resources (host name binding, Private Link approval) stay in the spoke stacks and pipelines, because they change the customer's resources.
+
+---
+
+## `frontdoor-route` project
+
+### Inputs
+
+| Input | Source |
+|---|---|
+| Customer configuration | `customers/*/frontdoor.<env>.yaml`, read with the shared loader (validate, combine, take this stack's environments) |
+| Stack configuration | Environments handled by the stack (`np`: dev, tst; `ppd`: ppd; `prd`: prd), profile and endpoint names |
+| Shared resources | `StackReference` to `shared-service`: profile ID, endpoint IDs and host names, WAF policy IDs, central Key Vault ID |
+
+### Resources per application and environment
+
+| Resource | Name (example `kim` in prd) | Notes |
+|---|---|---|
+| Custom domain | `kim-msdhn-com` | Host name derived from application name and environment; TLS `ManagedCertificate`, or `CustomerCertificate` with the secret below; minimum TLS 1.2 |
+| Secret | `kim-msdhn-com` | Only with `isFrontDoorManagedCertificate: false`: reference to the central Key Vault certificate, latest version |
+| Origin group | `og-kim-prd` | Health probes off or `HEAD /health` with a long interval |
+| Origin | `or-kim-prd` | Host name `<app service>.azurewebsites.net`, origin host header empty, Private Link to the App Service, `enforceCertificateNameCheck: false` |
+| Route | `rt-kim-prd` | On the environment's endpoint, one custom domain, HTTPS only with HTTP→HTTPS redirect, `enabled` from the configuration |
+
+### Security policies
+
+- A security policy links a WAF policy to a set of domains; each domain can be in only one security policy per profile.
+- Each `frontdoor-route` stack owns **its own** security policy (`sp-np`, `sp-ppd`, `sp-prd`) listing the domains of its environment and linking them to the WAF policy from `shared-service`. Adding an application only changes the stack's own security policy; `shared-service` is never touched.
+- An application with its own WAF policy (exceptions) gets a separate security policy in the same stack for its domain.
+
+### Outputs
+
+Per application and environment: host name, endpoint host name (CNAME value), `_dnsauth` validation token, domain validation state and certificate state. The pull request and deployment pipelines use these to generate the DNS request and to decide when a route can be enabled.
+
+### Deployment
+
+- Pull request: `pulumi preview` for every affected stack, posted to the pull request together with the DNS records to request.
+- Merge: `np`, then `ppd`, then `prd` (after approval).
+- The stacks are never run in parallel: `ppd` and `prd` share a profile, and Front Door rejects concurrent changes on one profile. The pipeline uses an exclusive lock per profile.
+- Deleting or recreating a profile in `shared-service` requires the `frontdoor-route` stacks on that profile to be emptied first.
+
+### Repo layout
+
+Following the package style of the other projects (`base.py`, `azure_<thing>.py`, `factory.py`):
+
+```
+projects/core/frontdoor-route/
+  Pulumi.yaml
+  Pulumi.np.yaml
+  Pulumi.ppd.yaml
+  Pulumi.prd.yaml
+  project/
+    __main__.py
+    config_loader/        # shared loader: read, validate (schema), combine
+    front_door_route/     # base.py, azure_front_door_route.py, factory.py
+```
+
+### Scaling
+
 - All customers share these stacks, so a broken entry blocks everyone's changes. Strict pull request validation protects against that.
+- If a shared stack becomes a bottleneck, it can later be split per customer (`frontdoor-route` / `<customer>-<env>`), at the cost of many more stacks and more concurrent changes on the same profile.
 
 ### Adding an application
 
