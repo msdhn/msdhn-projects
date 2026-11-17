@@ -2,7 +2,7 @@
 
 ## Context
 
-- The platform runs on Azure in a hub-spoke topology: every spoke serves one customer, the hub and the central services subscription hold shared services.
+- The platform runs on Azure in a hub-spoke topology: every spoke serves one customer, the hub and the management subscription hold shared services.
 - Each customer can run multiple applications, each on its own App Service per environment, in a customer subscription per environment.
 - Environments: `rnd`, `dev`, `tst`, `ppd` (pre-production) and `prd`, grouped into the lifecycles `rnd` (rnd), `npd` (dev, tst) and `prd` (ppd, prd).- App Services are reachable **only through Front Door** (public network access disabled, Private Link origin).
 - `msdhn.com` is the organization's root domain. Its public DNS is served by an on-premises DNS server managed by a central team; record requests are manual.
@@ -35,7 +35,7 @@ flowchart LR
         uprd["kmi.msdhn.com<br/>kom-ppd.msdhn.com"]
     end
 
-    subgraph shared["Shared-service subscription"]
+    subgraph shared["Management subscription"]
         afdrnd["Front Door afd-plt-rnd<br/>lifecycle rnd · env rnd"]
         afdnpd["Front Door afd-plt-npd<br/>lifecycle npd · env dev, tst"]
         afdprd["Front Door afd-plt-prd<br/>lifecycle prd · env ppd, prd"]
@@ -82,7 +82,7 @@ flowchart LR
         ckv["Customer Key Vault"]
     end
 
-    subgraph shared["Shared-service subscription"]
+    subgraph shared["Management subscription"]
         kv["Central Key Vaults per lifecycle<br/>kv-plt-rnd · kv-plt-npd · kv-plt-prd<br/>customer-managed certificates"]
         afd["Front Door profiles<br/>afd-plt-rnd · afd-plt-npd · afd-plt-prd"]
     end
@@ -107,7 +107,7 @@ Rendered versions: `frontdoor_architecture_traffic.png` and `frontdoor_architect
 
 | Topic | Decision |
 |---|---|
-| Placement | Front Door is a central service in the central services subscription (`shared-service` project), owned by the platform team. |
+| Placement | Front Door is a central service in the management subscription (`shared-service` project), owned by the platform team. |
 | Profiles | Two Premium profiles: `afd-plt-np` (dev, tst) and `afd-plt-prd` (ppd, prd). |
 | Endpoints | `fde-plt-np` in the non-prod profile; `fde-plt-ppd` and `fde-plt-prd` in the prod profile. |
 | Host names | Flat names under `msdhn.com` for every environment, for example `kmi.msdhn.com` (prd), `kmi-ppd.msdhn.com`, `kmi-tst.msdhn.com`, `kmi-dev.msdhn.com`, `kmi-rnd.msdhn.com`. |
@@ -229,7 +229,7 @@ For applications that need their own certificate (for example a policy or EV req
 | `secretName` | Secret | PFX/PKCS#12, base64, without password (content type `application/x-pkcs12`), or PEM with private key and full chain (content type `application/x-pem-file`) |
 
 - In the central Key Vault the copy is always imported as a **certificate** object, whatever the source, so Front Door and monitoring see one uniform format.
-- Front Door only reads Key Vaults in its own subscription, so the platform copies the certificate to the **central Key Vault of its lifecycle** in the shared-service subscription:
+- Front Door only reads Key Vaults in its own subscription, so the platform copies the certificate to the **central Key Vault of its lifecycle** in the management subscription:
 
 | Source environment (customer Key Vault) | Central Key Vault | Read by Front Door |
 |---|---|---|
@@ -288,7 +288,7 @@ Example for `kim` in prod:
 | `_dnsauth.kim.msdhn.com` | TXT | Front Door validation token | Domain ownership for the managed certificate (not needed with a customer certificate) |
 | `asuid.kim.msdhn.com` | TXT | App Service custom domain verification ID | Lets the App Service accept `kim.msdhn.com` |
 
-- The same three records apply to `kim-dev`, `kim-tst` and `kim-ppd`, with the CNAME pointing to the endpoint of that environment. That is **12 records per application** across four environments.
+- The same three records apply to `kim-rnd`, `kim-dev`, `kim-tst` and `kim-ppd`, with the CNAME pointing to the endpoint of that environment. That is **15 records per application** across five environments.
 - The `_dnsauth` token is valid for 7 days after Front Door generates it; if the record isn't in place by then, the token is regenerated. The record stays in place afterwards.
 - TTL of 1 hour on all records.
 - Values:
